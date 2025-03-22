@@ -137,7 +137,7 @@ resource "aws_ecs_task_definition" "frontend" {
   container_definitions = jsonencode([
     {
       name      = "frontend"
-      image     = "ghcr.io/meetingbot/frontend:sha-${local.current_commit_sha_short}"
+      image     = var.frontend_image_url != "" ? var.frontend_image_url : "ghcr.io/meetingbot/frontend:sha-${local.current_commit_sha_short}"
       essential = true
       portMappings = [
         {
@@ -194,7 +194,7 @@ resource "aws_ecs_task_definition" "backend" {
   container_definitions = jsonencode([
     {
       name      = "backend"
-      image     = "ghcr.io/meetingbot/backend:sha-${local.current_commit_sha_short}"
+      image     = var.backend_image_url != "" ? var.backend_image_url : "ghcr.io/meetingbot/backend:sha-${local.current_commit_sha_short}"
       essential = true
       portMappings = [
         {
@@ -222,7 +222,7 @@ resource "aws_ecs_task_definition" "backend" {
         },
         {
           name  = "FRONTEND_URL"
-          value = "http://${var.domain_name}"
+          value = "https://${var.domain_name}"
         },
         {
           name  = "AUTH_GITHUB_ID"
@@ -330,15 +330,15 @@ resource "aws_ecs_task_definition" "meet_bot" {
   family                   = "${local.name}-meet-bot"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = 4096
-  memory                   = 16384
+  cpu                      = 2048
+  memory                   = 4096
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   task_role_arn            = aws_iam_role.bot_role.arn
 
   container_definitions = jsonencode([
     {
       name      = "bot"
-      image     = "ghcr.io/meetingbot/bots/meet:sha-${local.current_commit_sha_short}"
+      image     = var.meet_bot_image_url != "" ? var.meet_bot_image_url : "ghcr.io/meetingbot/bots/meet:sha-${local.current_commit_sha_short}"
       essential = true
       environment = [
         {
@@ -380,7 +380,7 @@ resource "aws_ecs_task_definition" "zoom_bot" {
   container_definitions = jsonencode([
     {
       name      = "bot"
-      image     = "ghcr.io/meetingbot/bots/zoom:sha-${local.current_commit_sha_short}"
+      image     = var.zoom_bot_image_url != "" ? var.zoom_bot_image_url : "ghcr.io/meetingbot/bots/zoom:sha-${local.current_commit_sha_short}"
       essential = true
       environment = [
         {
@@ -422,7 +422,7 @@ resource "aws_ecs_task_definition" "teams_bot" {
   container_definitions = jsonencode([
     {
       name      = "bot"
-      image     = "ghcr.io/meetingbot/bots/teams:sha-${local.current_commit_sha_short}"
+      image     = var.teams_bot_image_url != "" ? var.teams_bot_image_url : "ghcr.io/meetingbot/bots/teams:sha-${local.current_commit_sha_short}"
       essential = true
       environment = [
         {
