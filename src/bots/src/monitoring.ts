@@ -7,6 +7,9 @@ export const startHeartbeat = async (
   botId: number,
   abortSignal: AbortSignal
 ) => {
+  if (process.env.DEBUG) {
+    return;
+  }
   while (!abortSignal.aborted) {
     try {
       await trpc.bots.heartbeat.mutate({ id: botId });
@@ -24,6 +27,9 @@ export const reportEvent = async (
   eventType: EventCode,
   eventData: any = null
 ) => {
+  if (process.env.DEBUG) {
+    return;
+  }
   try {
     // Report event
     await trpc.bots.reportEvent.mutate({
