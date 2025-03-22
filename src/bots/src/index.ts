@@ -10,6 +10,7 @@ import { EventCode, type BotConfig } from "./types";
 dotenv.config();
 
 const main = async () => {
+  let fatalError = null;
   const requiredEnvVars = [
     "BOT_DATA",
     "AWS_BUCKET_NAME",
@@ -51,7 +52,9 @@ const main = async () => {
   let bot: Bot;
   switch (botData.meetingInfo.platform) {
     case "google":
+      console.log("Importing Google Meet bot");
       const { MeetsBot } = await import("../meet/src/bot");
+      console.log("Creating Google Meet bot");
       bot = new MeetsBot(botData, async (eventType: EventCode, data: any) => {
         await reportEvent(botId, eventType, data);
       });
@@ -83,12 +86,14 @@ const main = async () => {
   await reportEvent(botId, EventCode.READY_TO_DEPLOY);
 
   try {
+    console.log("Starting bot...");
     // Run the bot
     await bot.run().catch(async (error) => {
       console.error("Error running bot:", error);
       await reportEvent(botId, EventCode.FATAL, {
         description: (error as Error).message,
       });
+      fatalError = error;
     });
 
     // Upload recording to S3
@@ -123,9 +128,9 @@ const main = async () => {
     // Create UUID and initialize key
     const uuid = crypto.randomUUID();
     const contentType = bot.getContentType();
-    key = `recordings/${uuid}-${
-      bot.settings.meetingInfo.platform
-    }-recording.${contentType.split("/")[1]}`;
+    key = `recordings/${uuid}-${bot.settings.meetingInfo.platform}-recording.${
+      contentType.split("/")[1]
+    }`;
 
     try {
       const commandObjects = {
@@ -149,13 +154,17 @@ const main = async () => {
     await reportEvent(botId, EventCode.FATAL, {
       description: (error as Error).message,
     });
+    fatalError = error;
   }
 
   // After S3 upload and cleanup, stop the heartbeat
   heartbeatController.abort();
   console.log("Bot execution completed, heartbeat stopped.");
 
-  // Report final DONE event
-  await reportEvent(botId, EventCode.DONE, { recording: key });
+  if (!fatalError) {
+    // Report final DONE event
+    await reportEvent(botId, EventCode.DONE, { recording: key });
+  }
+  process.exit(fatalError ? 1 : 0);
 };
 main();
