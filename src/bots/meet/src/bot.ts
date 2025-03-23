@@ -5,7 +5,11 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { setTimeout } from "timers/promises";
 import { BotConfig, EventCode } from "../../src/types";
 import { Bot } from "../../src/bot";
-import * as fs from "fs";
+import {
+  attachMutationObserver,
+  dumpPageHTML,
+  setupNetworkLogging,
+} from "./debugTools";
 
 // Use Stealth Plugin to avoid detection
 const stealthPlugin = StealthPlugin();
@@ -17,16 +21,11 @@ chromium.use(stealthPlugin);
 const userAgent =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
-// Constant Selectors
 const enterNameField = 'input[type="text"][aria-label="Your name"]';
 const askToJoinButton = '//button[.//span[text()="Ask to join"]]';
 const gotKickedDetector = '//button[.//span[text()="Return to home screen"]]';
 const leaveButton = `//button[@aria-label="Leave call"]`;
 const peopleButton = `//button[@aria-label="People"]`;
-const onePersonRemainingField =
-  '//span[.//div[text()="Contributors"]]//div[text()="1"]';
-const muteButton = `[aria-label*="Turn off mic"]`; // *= -> conatins
-const cameraOffButton = `[aria-label*="Turn off camera"]`;
 
 /**
  * @param amount Milliseconds
@@ -53,11 +52,11 @@ export class MeetsBot extends Bot {
   page!: Page;
   kicked: boolean = false;
   recordingPath: string;
+  debug: boolean = process.env.DEBUG === "true";
 
   private ffmpegProcess: ChildProcessWithoutNullStreams | null = null;
-
-  private participantCount: number = 0;
-  private timeAloneStarted: number = Infinity;
+  private participantCount = 0;
+  private timeAloneStarted = Infinity;
 
   /**
    *
@@ -85,83 +84,49 @@ export class MeetsBot extends Bot {
       "--enable-audio-output",
     ];
 
-    // Fetch
     this.meetingURL = botSettings.meetingInfo.meetingUrl!;
-    this.kicked = false; // Flag for if the bot was kicked from the meeting, no need to click exit button.
   }
 
-  /**
-   * Run the bot to join the meeting and perform the meeting actions.
-   */
+  getRecordingPath(): string {
+    return this.recordingPath;
+  }
+
+  getContentType(): string {
+    return "video/mp4";
+  }
+
   async run(): Promise<void> {
     await this.joinMeeting();
     await this.meetingActions();
   }
 
-  async debugPageOutput(name: string): Promise<void> {
-    // Save the page content to the /tmp/dout directory
-    if (!process.env.DEBUG) {
-      return;
-    }
-    const pageContent = await this.page.content();
-    const outputPath = "/tmp/dout";
-    if (!fs.existsSync(outputPath)) {
-      fs.mkdirSync(outputPath, { recursive: true });
-    }
-    fs.writeFileSync(`${outputPath}/pageContent-${name}.html`, pageContent);
-    console.log(`Page content saved to ${outputPath}/pageContent.html`);
-  }
-
-  /**
-   * Gets a consistant video recording path
-   * @returns {string} - Returns the path to the recording file.
-   */
-  getRecordingPath(): string {
-    return this.recordingPath;
-  }
-
-  /**
-   * Gets the video content type.
-   * @returns {string} - Returns the content type of the recording file.
-   */
-  getContentType(): string {
-    return "video/mp4";
-  }
-
-  /**
-   *
-   * Perform the actions to join a Google Meet meeting.
-   *
-   * Verfied for UI as of March 2025.
-   *
-   * @returns {Promise<number>} - Returns 0 if the bot successfully joins the meeting, or 1 if it fails to join the meeting.
-   */
-
-  // Launch the browser and open a new blank page
   async joinMeeting() {
     console.log("Joining Call ...");
-    // Launch Browser
+
     this.browser = await chromium.launch({
       headless: false,
       args: this.browserArgs,
     });
 
-    // Unpack Dimensions
     const vp = { width: 1280, height: 720 };
-
-    // Create Browser Context
     const context = await this.browser.newContext({
       permissions: ["camera", "microphone"],
-      userAgent: userAgent,
+      userAgent,
       viewport: vp,
     });
 
-    // Create Page, Go to
     this.page = await context.newPage();
+
+    // Pass console logs to the main process for observability
     this.page.on("console", (msg) => {
-      // Log browser messages in Node.js
-      console.log(`[BrowserConsole][${msg.type()}] ${msg.text()}`);
+      console.log(`[BROWSER][${msg.type()}] ${msg.text()}`);
     });
+
+    if (this.debug) {
+      setupNetworkLogging(this.page, true);
+      await attachMutationObserver(this.page, "body");
+    }
+
     await this.page.waitForTimeout(randomDelay(1000));
 
     // Inject anti-detection code using addInitScript
@@ -182,16 +147,15 @@ export class MeetsBot extends Bot {
         get: () => ["en-US", "en"],
       });
 
-      // Override other properties
-      Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 4 }); // Fake number of CPU cores
-      Object.defineProperty(navigator, "deviceMemory", { get: () => 8 }); // Fake memory size
-      Object.defineProperty(window, "innerWidth", { get: () => 1920 }); // Fake screen resolution
+      // Override properties with fake values
+      Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 4 });
+      Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+      Object.defineProperty(window, "innerWidth", { get: () => 1920 });
       Object.defineProperty(window, "innerHeight", { get: () => 1080 });
       Object.defineProperty(window, "outerWidth", { get: () => 1920 });
       Object.defineProperty(window, "outerHeight", { get: () => 1080 });
     });
 
-    //Define Bot Name
     const name = this.settings.botDisplayName || "MeetingBot";
 
     // Go to the meeting URL (Simulate Movement)
@@ -201,45 +165,32 @@ export class MeetsBot extends Bot {
     await this.page.waitForTimeout(300);
     await this.page.mouse.move(114, 100);
     await this.page.mouse.click(100, 100);
-
-    //Go
     await this.page.goto(this.meetingURL, { waitUntil: "networkidle" });
-    await this.page.bringToFront(); //ensure active
+    await this.page.bringToFront();
 
     console.log("Waiting for the input field to be visible...");
     await this.page.waitForSelector(enterNameField);
-
-    console.log("Waiting for 1 seconds...");
     await this.page.waitForTimeout(randomDelay(1000));
 
     console.log("Filling the input field with the name...");
     await this.page.fill(enterNameField, name);
 
-    // Click the "Ask to join" button
     console.log('Waiting for the "Ask to join" button...');
     await this.page.waitForSelector(askToJoinButton, { timeout: 60000 });
     await this.page.click(askToJoinButton);
-
-    //Should Exit after 1 Minute
-    console.log("Awaiting Entry ....");
-    const timeout = this.settings.automaticLeave.waitingRoomTimeout; // in milliseconds
-
-    // wait for the leave button to appear (meaning we've joined the meeting)
+    console.log("Awaiting Entry...");
+    const timeout = this.settings.automaticLeave.waitingRoomTimeout;
     try {
-      await this.page.waitForSelector(leaveButton, {
-        timeout: timeout,
-      });
-    } catch (e) {
+      await this.page.waitForSelector(leaveButton, { timeout });
+    } catch {
       // Timeout Error: Will get caught by bot/index.ts
       throw { message: "Bot was not admitted into the meeting." };
     }
 
-    //Done. Log.
+    if (this.debug) await dumpPageHTML(this.page, "joined");
+
     console.log("Joined Call.");
     await this.onEvent(EventCode.JOINING_CALL);
-
-    //Done.
-    return 0;
   }
 
   /**
@@ -297,22 +248,12 @@ export class MeetsBot extends Bot {
     ];
 
     this.ffmpegProcess = spawn("ffmpeg", ffmpegArgs);
-
-    // Floods the logs, enable for debugging
-    // this.ffmpegProcess.stdout.on("data", (data) => {
-    //   console.log(`[ffmpeg][stdout]: ${data}`);
-    // });
-
-    // this.ffmpegProcess.stderr.on("data", (data) => {
-    //   console.log(`[ffmpeg][stderr]: ${data}`);
-    // });
+    console.log("ffmpeg recording started.");
 
     this.ffmpegProcess.on("exit", (code) => {
       console.log(`ffmpeg process exited with code ${code}`);
       this.ffmpegProcess = null;
     });
-
-    console.log("ffmpeg recording started.");
   }
 
   /**
@@ -333,7 +274,6 @@ export class MeetsBot extends Bot {
     }
 
     console.log("Stopping ffmpeg recording...");
-
     // Send SIGINT to allow ffmpeg to finalize the file
     this.ffmpegProcess.kill("SIGINT");
 
@@ -343,41 +283,39 @@ export class MeetsBot extends Bot {
     });
 
     this.ffmpegProcess = null;
-
     console.log(`Recording saved to: ${this.getRecordingPath()}`);
   }
 
-  /**
-   *
-   * Meeting actions of the bot.
-   *
-   * This function performs the actions that the bot is supposed to do in the meeting.
-   * It first waits for the people button to be visible, then clicks on it to open the people panel.
-   * It then starts recording the meeting and sets up participant monitoring.
-   *
-   * Afterwards, It enters a simple loop that checks for end meeting conditions every X seconds.
-   * Once detected it's done, it stops the recording and exits.
-   *
-   * @returns 0
-   */
+  async leaveMeeting() {
+    console.log("Stopping Recording ...");
+    await this.stopRecording();
+    console.log("Recording stopped.");
+
+    try {
+      console.log("Trying to leave the call ...");
+      await this.page.click(leaveButton, { timeout: 1000 });
+      console.log("Left Call.");
+    } catch {
+      console.log(
+        "Attempted to Leave Call - couldn't (probably already left)."
+      );
+    }
+
+    await this.browser.close();
+    console.log("Closed Browser.");
+  }
+
   async meetingActions() {
-    // Meeting Join Actions
-    console.log("Clicking People Button...");
     await this.page.waitForSelector(peopleButton);
     await this.page.click(peopleButton);
 
-    // Wait for the people panel to be visible
     await this.page.waitForSelector('[aria-label="Participants"]', {
       state: "visible",
     });
 
-    // Start Recording, Yes by default
     console.log("Starting Recording");
-    this.startRecording();
+    await this.startRecording();
 
-    // Set up participant monitoring
-
-    // Monitor for participants joining
     await this.page.exposeFunction(
       "onParticipantJoin",
       async (participantId: string) => {
@@ -385,7 +323,6 @@ export class MeetsBot extends Bot {
       }
     );
 
-    // Monitor for participants leaving
     await this.page.exposeFunction(
       "onParticipantLeave",
       async (participantId: string) => {
@@ -393,16 +330,11 @@ export class MeetsBot extends Bot {
       }
     );
 
-    // Expose function to update participant count
     await this.page.exposeFunction("addParticipantCount", (count: number) => {
       this.participantCount += count;
       console.log("Updated Participant Count:", this.participantCount);
-
-      if (this.participantCount == 1) {
-        this.timeAloneStarted = Date.now();
-      } else {
-        this.timeAloneStarted = Infinity;
-      }
+      this.timeAloneStarted =
+        this.participantCount === 1 ? Date.now() : Infinity;
     });
 
     // Add mutation observer for participant list
@@ -414,14 +346,11 @@ export class MeetsBot extends Bot {
         return;
       }
 
-      // Initialize participant count
       const initialParticipants = peopleList.querySelectorAll(
         "[data-participant-id]"
       ).length;
-      window.addParticipantCount(initialParticipants); // initially 0
-      console.log(`Initial participant count: ${initialParticipants}`);
+      window.addParticipantCount(initialParticipants);
 
-      // Set up mutation observer
       console.log("Setting up mutation observer on participants list");
       const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
@@ -464,14 +393,7 @@ export class MeetsBot extends Bot {
       observer.observe(peopleList, { childList: true, subtree: true });
     });
 
-    //
-    //
-    //
-    // Loop -- check for end meeting conditions every second
-    console.log("Waiting until a leave condition is fulfilled..");
     while (true) {
-      // Check if it's only me in the meeting
-      console.log("Checking if 1 Person Remaining ...", this.participantCount);
       if (this.participantCount === 1) {
         const leaveMs = this.settings.automaticLeave.everyoneLeftTimeout;
         const msDiff = Date.now() - this.timeAloneStarted;
@@ -480,94 +402,37 @@ export class MeetsBot extends Bot {
             msDiff / 1000
           } / ${leaveMs / 1000}s) ...`
         );
-
         if (msDiff > leaveMs) {
           console.log(
-            "Only one participant remaining for more than alocated time, leaving the meeting."
+            "Only one participant remaining for timeout duration, leaving."
           );
           break;
         }
       }
 
-      // Got kicked -- no longer in the meeting
-      // Check each of these conditions
-
-      // Check if "Return to Home Page" button exists (Kick Condition 1)
       if (
         (await this.page
           .locator(gotKickedDetector)
           .count()
-          .catch(() => 0)) > 0
-      ) {
-        this.kicked = true;
-        console.log("Kicked");
-        break;
-      }
-
-      // console.log('Checking for hidden leave button ...')
-      // Hidden Leave Button (Kick Condition 2)
-      if (
-        await this.page
+          .catch(() => 0)) > 0 ||
+        (await this.page
           .locator(leaveButton)
           .isHidden({ timeout: 500 })
-          .catch(() => true)
-      ) {
-        this.kicked = true;
-        console.log("Kicked");
-        break;
-      }
-
-      // console.log('Checking for removed from meeting text ...')
-      // Removed from Meeting Text (Kick Condition 3)
-      if (
-        await this.page
+          .catch(() => true)) ||
+        (await this.page
           .locator('text="You\'ve been removed from the meeting"')
           .isVisible({ timeout: 500 })
-          .catch(() => false)
+          .catch(() => false))
       ) {
         this.kicked = true;
         console.log("Kicked");
         break;
       }
 
-      // Reset Loop
-      console.log("Waiting 5 seconds.");
-      await setTimeout(5000); //5 second loop
+      await setTimeout(5000);
     }
 
-    //
-    // Exit
     console.log("Starting End Life Actions ...");
     await this.leaveMeeting();
-    return 0;
-  }
-
-  /**
-   *
-   * Stops the recording, leaves the call.
-   *
-   * @returns {Promise<number>} - Returns 0 if the bot successfully leaves the meeting, or 1 if it fails to leave the meeting.
-   */
-  async leaveMeeting() {
-    // Ensure Recording is done
-    console.log("Stopping Recording ...");
-    await this.stopRecording();
-    console.log("Done.");
-
-    // Try and Find the leave button, press. Otherwise, just delete the browser.
-    try {
-      console.log("Trying to leave the call ...");
-      await this.page.click(leaveButton, { timeout: 1000 }); //Short Attempt
-      console.log("Left Call.");
-    } catch (e) {
-      console.log(
-        "Attempted to Leave Call - couldn't (probably aleready left)."
-      );
-    }
-
-    await this.browser.close();
-    console.log("Closed Browser.");
-
-    return 0;
   }
 }
