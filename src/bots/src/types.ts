@@ -16,7 +16,7 @@ export type AutomaticLeave = {
 };
 
 export type BotConfig = {
-  id: number;
+  id: string;
   userId: string;
   meetingInfo: MeetingInfo;
   meetingTitle: string;

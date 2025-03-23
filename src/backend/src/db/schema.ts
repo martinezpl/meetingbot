@@ -217,7 +217,7 @@ export type EventCode = z.infer<typeof eventCode>
 
 export const bots = pgTable('bots', {
   // bot stuff
-  id: serial('id').primaryKey(),
+  id: uuid('id').primaryKey(),
   botDisplayName: varchar('bot_display_name', { length: 255 }).notNull(),
   botImage: varchar('bot_image', { length: 255 }),
   // refernce user
@@ -269,7 +269,7 @@ export const selectBotSchema = createSelectSchema(bots)
 export type SelectBotType = z.infer<typeof selectBotSchema>
 
 export const botConfigSchema = z.object({
-  id: z.number(),
+  id: z.string(),
   userId: z.string(),
   meetingInfo: meetingInfoSchema,
   meetingTitle: z.string(),
@@ -317,7 +317,7 @@ export type EventData = z.infer<typeof eventData>
 
 export const events = pgTable('events', {
   id: serial('id').primaryKey(),
-  botId: integer('bot_id')
+  botId: uuid('bot_id')
     .references(() => bots.id)
     .notNull(),
   eventType: varchar('event_type', { length: 255 })

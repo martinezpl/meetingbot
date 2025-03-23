@@ -4,7 +4,7 @@ import { setTimeout } from "timers/promises";
 
 // Start heartbeat loop in the background
 export const startHeartbeat = async (
-  botId: number,
+  botId: string,
   abortSignal: AbortSignal
 ) => {
   if (process.env.DEBUG) {
@@ -23,7 +23,7 @@ export const startHeartbeat = async (
 
 // Function to report events
 export const reportEvent = async (
-  botId: number,
+  botId: string,
   eventType: EventCode,
   eventData: any = null
 ) => {

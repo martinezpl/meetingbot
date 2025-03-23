@@ -40,7 +40,7 @@ export const botsRouter = createTRPCRouter({
         description: 'Get a specific bot by its ID',
       },
     })
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string() }))
     .output(selectBotSchema)
     .query(async ({ input, ctx }) => {
       const result = await ctx.db
@@ -72,6 +72,7 @@ export const botsRouter = createTRPCRouter({
 
         // Extract database fields from input
         const dbInput = {
+          id: crypto.randomUUID(),
           botDisplayName:
             input.botDisplayName ?? DEFAULT_BOT_VALUES.botDisplayName,
           botImage: input.botImage,
@@ -118,7 +119,7 @@ export const botsRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        id: z.number(),
+        id: z.string(),
         data: insertBotSchema.partial(),
       })
     )
@@ -154,7 +155,7 @@ export const botsRouter = createTRPCRouter({
     .input(
       z
         .object({
-          id: z.number(),
+          id: z.string(),
           status: status,
           recording: z.string().optional(),
         })
@@ -225,7 +226,7 @@ export const botsRouter = createTRPCRouter({
         description: 'Delete a bot by its ID',
       },
     })
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string() }))
     .output(z.object({ message: z.string() }))
     .mutation(async ({ input, ctx }) => {
       // Check if the bot belongs to the user
@@ -255,7 +256,7 @@ export const botsRouter = createTRPCRouter({
           'Retrieve a signed URL for the recording associated with a specific bot',
       },
     })
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string() }))
     .output(z.object({ recordingUrl: z.string().nullable() }))
     .query(async ({ input, ctx }) => {
       const result = await ctx.db
@@ -284,7 +285,7 @@ export const botsRouter = createTRPCRouter({
           'Called every few seconds by bot scripts to indicate that the bot is still running',
       },
     })
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string() }))
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
       console.log('Heartbeat received for bot', input.id)
@@ -313,7 +314,7 @@ export const botsRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        id: z.number(),
+        id: z.string(),
         event: insertEventSchema.omit({ botId: true }),
       })
     )
@@ -337,7 +338,7 @@ export const botsRouter = createTRPCRouter({
           'Deploy a bot by provisioning necessary resources and starting it up',
       },
     })
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.string() }))
     .output(selectBotSchema)
     .mutation(async ({ input, ctx }) => {
       // Check if the bot belongs to the user

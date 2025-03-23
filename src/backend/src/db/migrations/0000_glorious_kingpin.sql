@@ -51,7 +51,7 @@ CREATE TABLE "authenticator" (
 );
 --> statement-breakpoint
 CREATE TABLE "bots" (
-	"id" serial PRIMARY KEY NOT NULL,
+	"id" uuid PRIMARY KEY NOT NULL,
 	"bot_display_name" varchar(255) NOT NULL,
 	"bot_image" varchar(255),
 	"user_id" uuid NOT NULL,
@@ -72,7 +72,7 @@ CREATE TABLE "bots" (
 --> statement-breakpoint
 CREATE TABLE "events" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"bot_id" integer NOT NULL,
+	"bot_id" uuid NOT NULL,
 	"event_type" varchar(255) NOT NULL,
 	"event_time" timestamp NOT NULL,
 	"details" json,

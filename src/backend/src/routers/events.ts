@@ -35,17 +35,14 @@ export const eventsRouter = createTRPCRouter({
       if (botIds.length === 0) {
         return []
       }
-      
+
       // Ensure botId is defined before using it in the query
       const botId = botIds[0]
       if (botId === undefined) {
         throw new Error('Bot not found')
       }
-      
-      return await ctx.db
-        .select()
-        .from(events)
-        .where(eq(events.botId, botId))
+
+      return await ctx.db.select().from(events).where(eq(events.botId, botId))
     }),
 
   getEventsForBot: protectedProcedure
@@ -60,7 +57,7 @@ export const eventsRouter = createTRPCRouter({
             .join('\n'),
       },
     })
-    .input(z.object({ botId: z.number() }))
+    .input(z.object({ botId: z.string() }))
     .output(z.array(selectEventSchema))
     .query(async ({ ctx, input }) => {
       // Check if the bot belongs to the user

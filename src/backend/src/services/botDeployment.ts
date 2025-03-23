@@ -62,7 +62,7 @@ export async function deployBot({
   botId,
   db,
 }: {
-  botId: number
+  botId: string
   db: PostgresJsDatabase<typeof schema>
 }) {
   const botResult = await db.select().from(bots).where(eq(bots.id, botId))
