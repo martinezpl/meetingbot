@@ -152,21 +152,23 @@ export const botsRouter = createTRPCRouter({
       },
     })
     .input(
-      z.object({
-        id: z.number(),
-        status: status,
-        recording: z.string().optional(),
-      }).refine(
-        (data) => {
-          if (data.status === 'DONE') {
-            return data.recording !== undefined
+      z
+        .object({
+          id: z.number(),
+          status: status,
+          recording: z.string().optional(),
+        })
+        .refine(
+          (data) => {
+            if (data.status === 'DONE') {
+              return data.recording !== undefined
+            }
+            return true
+          },
+          {
+            message: 'Recording is required when status is DONE',
           }
-          return true
-        },
-        {
-          message: 'Recording is required when status is DONE',
-        }
-      )
+        )
     )
     .output(selectBotSchema)
     .mutation(async ({ input, ctx }) => {

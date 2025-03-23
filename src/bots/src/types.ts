@@ -26,6 +26,7 @@ export type BotConfig = {
   botImage?: string;
   heartbeatInterval: number;
   automaticLeave: AutomaticLeave;
+  metadata?: Record<string, any>;
   callbackUrl?: string;
 };
 

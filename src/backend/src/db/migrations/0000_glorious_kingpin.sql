@@ -66,6 +66,7 @@ CREATE TABLE "bots" (
 	"heartbeat_interval" integer NOT NULL,
 	"automatic_leave" json NOT NULL,
 	"callback_url" varchar(1024),
+	"metadata": json,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint

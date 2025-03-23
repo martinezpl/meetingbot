@@ -241,6 +241,7 @@ export const bots = pgTable('bots', {
   // config
   heartbeatInterval: integer('heartbeat_interval').notNull(),
   automaticLeave: json('automatic_leave').$type<AutomaticLeave>().notNull(),
+  metadata: json('metadata').$type<Record<string, any>>().default({}),
   callbackUrl: varchar('callback_url', { length: 1024 }),
   // timestamps
   createdAt: timestamp('created_at').defaultNow(),
@@ -255,6 +256,7 @@ export const insertBotSchema = z.object({
   endTime: z.date().optional(),
   heartbeatInterval: z.number().optional(),
   automaticLeave: automaticLeaveSchema.optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   callbackUrl: z
     .string()
     .url()
@@ -277,6 +279,7 @@ export const botConfigSchema = z.object({
   botImage: z.string().url().optional(),
   heartbeatInterval: z.number(),
   automaticLeave: automaticLeaveSchema,
+  metadata: z.record(z.string(), z.any()).optional(),
   callbackUrl: z
     .string()
     .url()
