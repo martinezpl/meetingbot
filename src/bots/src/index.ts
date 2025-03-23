@@ -126,11 +126,8 @@ const main = async () => {
     }
 
     // Create UUID and initialize key
-    const uuid = crypto.randomUUID();
     const contentType = bot.getContentType();
-    key = `recordings/${uuid}-${bot.settings.meetingInfo.platform}-recording.${
-      contentType.split("/")[1]
-    }`;
+    key = `recordings/${bot.settings.id}.${contentType.split("/")[1]}`;
 
     try {
       const commandObjects = {
