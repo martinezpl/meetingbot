@@ -159,12 +159,7 @@ export const botsRouter = createTRPCRouter({
           id: z.string(),
           status: status,
           recording: z.string().optional(),
-          speakerTimeframes: z
-            .record(
-              z.string(),
-              z.array(z.tuple([z.number(), z.number()])).or(z.array(z.number()))
-            )
-            .optional(),
+          speakerTimeframes: z.record(z.string(), z.any()).optional(),
         })
         .refine(
           (data) => {
