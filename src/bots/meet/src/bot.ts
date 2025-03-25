@@ -350,11 +350,11 @@ export class MeetsBot extends Bot {
     // });
 
     // Wait for participant rectangles to load
-    this.joinedAt = Date.now();
     await this.page.waitForSelector('div[class="oZRSLe"]');
 
     console.log("Starting Recording");
     await this.startRecording();
+    this.joinedAt = Date.now();
 
     await this.page.exposeFunction(
       "onParticipantJoin",
