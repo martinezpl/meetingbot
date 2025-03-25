@@ -87,6 +87,9 @@ const main = async () => {
   // Run the bot
   await bot.run().catch(async (error) => {
     console.error("Error running bot:", error);
+    if (error.message && error.message.includes("not admitted")) {
+      process.exit(0);
+    }
     // TODO: Add event code for not getting admitted to the call
     await reportEvent(botId, EventCode.FATAL, {
       description: (error as Error).message,
