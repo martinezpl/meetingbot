@@ -400,10 +400,13 @@ export class MeetsBot extends Bot {
 
         // Check whether a participant is speaking
         participantStates.forEach(async (state) => {
+          const relativeTimestamp = Date.now() - this.joinedAt;
           if (state.isSpeaking) {
             this.lastActivity = Date.now();
             if (!this.speakerTimeframes[state.participant.name]) {
-              this.speakerTimeframes[state.participant.name] = [[Date.now()]];
+              this.speakerTimeframes[state.participant.name] = [
+                [relativeTimestamp],
+              ];
             } else {
               const latestTimeframe =
                 this.speakerTimeframes[state.participant.name]!.at(-1)!;
@@ -411,7 +414,7 @@ export class MeetsBot extends Bot {
               if (latestTimeframe.length === 2) {
                 // Latest timeframe is completed, create a new timeframe
                 this.speakerTimeframes[state.participant.name]!.push([
-                  Date.now(),
+                  relativeTimestamp,
                 ]);
               }
             }
@@ -421,7 +424,7 @@ export class MeetsBot extends Bot {
                 this.speakerTimeframes[state.participant.name]!.at(-1)!;
               if (latestTimeframe.length === 1) {
                 // participant stopped speaking, complete the timeframe
-                latestTimeframe.push(Date.now());
+                latestTimeframe.push(relativeTimestamp);
               }
             }
           }
