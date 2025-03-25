@@ -28,6 +28,10 @@ export class Bot implements BotInterface {
     throw new Error("Method not implemented.");
   }
 
+  getSpeakerTimeframes(): any {
+    throw new Error("Method not implemented.");
+  }
+
   getContentType(): string {
     throw new Error("Method not implemented.");
   }

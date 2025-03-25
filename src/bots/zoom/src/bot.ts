@@ -127,6 +127,10 @@ export class ZoomBot extends Bot {
     return this.recordingPath;
   }
 
+  getSpeakerTimeframes() {
+    return {};
+  }
+
   getContentType(): string {
     return this.contentType;
   }

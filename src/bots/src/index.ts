@@ -2,8 +2,6 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Bot } from "./bot";
 import fs, { readFileSync } from "fs";
 import dotenv from "dotenv";
-import { setTimeout } from "timers/promises";
-import crypto from "crypto";
 import { startHeartbeat, reportEvent } from "./monitoring";
 import { EventCode, type BotConfig } from "./types";
 
@@ -85,73 +83,52 @@ const main = async () => {
   // Report READY_TO_DEPLOY event
   await reportEvent(botId, EventCode.READY_TO_DEPLOY);
 
-  try {
-    console.log("Starting bot...");
-    // Run the bot
-    await bot.run().catch(async (error) => {
-      console.error("Error running bot:", error);
-      await reportEvent(botId, EventCode.FATAL, {
-        description: (error as Error).message,
-      });
-      fatalError = error;
+  console.log("Starting bot...");
+  // Run the bot
+  await bot.run().catch(async (error) => {
+    console.error("Error running bot:", error);
+    // TODO: Add event code for not getting admitted to the call
+    await reportEvent(botId, EventCode.FATAL, {
+      description: (error as Error).message,
     });
+    fatalError = error;
+  });
 
-    // Upload recording to S3
-    console.log("Start Upload to S3...");
-    const recordingPath = bot.getRecordingPath();
-
-    let fileContent: Buffer;
-    let i = 10;
-    while (true) {
-      try {
-        fileContent = readFileSync(recordingPath);
-        console.log("Successfully read recording file");
-        break; // Exit loop if readFileSync is successful
-      } catch (error) {
-        const err = error as NodeJS.ErrnoException;
-        if (err.code === "EBUSY") {
-          console.log("File is busy, retrying...");
-          await setTimeout(1000); // Wait for 1 second before retrying
-        } else if (err.code === "ENOENT") {
-          console.log("File not found, retrying ", i--, " more times");
-          await setTimeout(1000); // Wait for 1 second before retrying
-
-          if (i < 0) {
-            throw new Error("File not found after multiple retries");
-          }
-        } else {
-          throw error; // Rethrow if it's a different error
-        }
-      }
-    }
+  // Upload recording to S3
+  console.log("Start Upload to S3...");
+  const recordingPath = bot.getRecordingPath();
+  const speakerTimeframes = bot.getSpeakerTimeframes();
+  console.log("Speaker Timeframes", speakerTimeframes);
+  try {
+    const fileContent = readFileSync(recordingPath);
+    console.log("Successfully read recording file");
 
     // Create UUID and initialize key
     const contentType = bot.getContentType();
     key = `recordings/${bot.settings.id}.${contentType.split("/")[1]}`;
 
-    try {
-      const commandObjects = {
-        Bucket: process.env.AWS_BUCKET_NAME!,
-        Key: key,
-        Body: fileContent,
-        ContentType: contentType,
-      };
+    const commandObjects = {
+      Bucket: process.env.AWS_BUCKET_NAME!,
+      Key: key,
+      Body: fileContent,
+      ContentType: contentType,
+    };
 
-      const putCommand = new PutObjectCommand(commandObjects);
-      await s3Client.send(putCommand);
-      console.log(`Successfully uploaded recording to S3: ${key}`);
+    const putCommand = new PutObjectCommand(commandObjects);
+    await s3Client.send(putCommand);
+    console.log(`Successfully uploaded recording to S3: ${key}`);
 
-      // Clean up local file
-      await fs.promises.unlink(recordingPath);
-    } catch (error) {
-      console.error("Error uploading to S3:", error);
-    }
+    // Clean up local file
+    await fs.promises.unlink(recordingPath);
   } catch (error) {
-    console.error("Error running bot:", error);
-    await reportEvent(botId, EventCode.FATAL, {
-      description: (error as Error).message,
-    });
-    fatalError = error;
+    console.error("Error uploading to S3:", error);
+    if (!fatalError) {
+      // If there was already a fatal error, don't overwrite it
+      await reportEvent(botId, EventCode.FATAL, {
+        description: (error as Error).message,
+      });
+      fatalError = error;
+    }
   }
 
   // After S3 upload and cleanup, stop the heartbeat
@@ -160,7 +137,10 @@ const main = async () => {
 
   if (!fatalError) {
     // Report final DONE event
-    await reportEvent(botId, EventCode.DONE, { recording: key });
+    await reportEvent(botId, EventCode.DONE, {
+      recording: key,
+      speakerTimeframes: speakerTimeframes,
+    });
   }
   process.exit(fatalError ? 1 : 0);
 };

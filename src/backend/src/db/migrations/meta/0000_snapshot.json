@@ -370,6 +370,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "speaker_timeframes": {
+          "name": "speaker_timeframes",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false
+        },
         "user_id": {
           "name": "user_id",
           "type": "uuid",

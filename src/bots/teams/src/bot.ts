@@ -28,6 +28,10 @@ export class TeamsBot extends Bot {
     return this.recordingPath;
   }
 
+  getSpeakerTimeframes() {
+    return {};
+  }
+
   getContentType(): string {
     return this.contentType;
   }

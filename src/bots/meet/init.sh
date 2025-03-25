@@ -14,7 +14,7 @@ pactl load-module module-null-sink sink_name=$PULSE_SINK
 
 # Start virtual display
 export DISPLAY=:99
-Xvfb $DISPLAY -screen 0 1280x720x24 &
+Xvfb $DISPLAY -screen 0 1280x1024x24 &
 
 # Start the application
 pnpm run start

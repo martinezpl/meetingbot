@@ -85,6 +85,7 @@ export const botsRouter = createTRPCRouter({
             input.heartbeatInterval ?? DEFAULT_BOT_VALUES.heartbeatInterval,
           automaticLeave:
             input.automaticLeave ?? DEFAULT_BOT_VALUES.automaticLeave,
+          callbackUrl: input.callbackUrl,
         }
 
         const result = await ctx.db.insert(bots).values(dbInput).returning()
@@ -158,6 +159,12 @@ export const botsRouter = createTRPCRouter({
           id: z.string(),
           status: status,
           recording: z.string().optional(),
+          speakerTimeframes: z
+            .record(
+              z.string(),
+              z.array(z.tuple([z.number(), z.number()])).or(z.array(z.number()))
+            )
+            .optional(),
         })
         .refine(
           (data) => {
@@ -187,6 +194,7 @@ export const botsRouter = createTRPCRouter({
       const bot = (
         await ctx.db
           .select({
+            speakerTimeframes: bots.speakerTimeframes,
             callbackUrl: bots.callbackUrl,
             id: bots.id,
           })
@@ -197,22 +205,31 @@ export const botsRouter = createTRPCRouter({
         throw new Error('Bot not found')
       }
 
+      console.log('Bot status updated:', bot)
       if (input.status === 'DONE') {
         // add the recording to the bot
         await ctx.db
           .update(bots)
-          .set({ recording: input.recording })
+          .set({
+            recording: input.recording,
+            speakerTimeframes: input.speakerTimeframes,
+          })
           .where(eq(bots.id, bot.id))
 
         if (bot.callbackUrl) {
+          console.log('Calling callback URL...')
           // call the callback url
-          await fetch(bot.callbackUrl, {
-            method: 'POST',
-            body: JSON.stringify({
-              botId: bot.id,
-              status: input.status,
-            }),
-          })
+          try {
+            await fetch(bot.callbackUrl, {
+              method: 'POST',
+              body: JSON.stringify({
+                botId: bot.id,
+                status: input.status,
+              }),
+            })
+          } catch (error) {
+            console.error('Error calling callback URL:', error)
+          }
         }
       }
       return result[0]
@@ -288,7 +305,6 @@ export const botsRouter = createTRPCRouter({
     .input(z.object({ id: z.string() }))
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
-      console.log('Heartbeat received for bot', input.id)
       // Update bot's last heartbeat
       const botUpdate = await ctx.db
         .update(bots)

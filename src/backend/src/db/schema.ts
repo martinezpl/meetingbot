@@ -242,6 +242,9 @@ export const bots = pgTable('bots', {
   heartbeatInterval: integer('heartbeat_interval').notNull(),
   automaticLeave: json('automatic_leave').$type<AutomaticLeave>().notNull(),
   metadata: json('metadata').$type<Record<string, any>>().default({}),
+  speakerTimeframes: json('speaker_timeframes')
+    .$type<Record<string, any>>() // TODO: fix type
+    .default({}),
   callbackUrl: varchar('callback_url', { length: 1024 }),
   // timestamps
   createdAt: timestamp('created_at').defaultNow(),

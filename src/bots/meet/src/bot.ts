@@ -5,11 +5,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { setTimeout } from "timers/promises";
 import { BotConfig, EventCode } from "../../src/types";
 import { Bot } from "../../src/bot";
-import {
-  attachMutationObserver,
-  dumpPageHTML,
-  setupNetworkLogging,
-} from "./debugTools";
+import { dumpPageHTML } from "./debugTools";
 
 // Use Stealth Plugin to avoid detection
 const stealthPlugin = StealthPlugin();
@@ -27,6 +23,11 @@ const gotKickedDetector = '//button[.//span[text()="Return to home screen"]]';
 const leaveButton = `//button[@aria-label="Leave call"]`;
 const peopleButton = `//button[@aria-label="People"]`;
 
+type Participant = {
+  id: string;
+  name: string;
+};
+
 /**
  * @param amount Milliseconds
  * @returns Random Number within 10% of the amount given, mean at amount
@@ -40,8 +41,14 @@ const randomDelay = (amount: number) =>
  */
 declare global {
   interface Window {
-    setParticipantCount: (count: number) => void;
-    addParticipantCount: (count: number) => void;
+    addParticipant: (participant: Participant) => void;
+    onParticipantJoin: (participant: Participant) => void;
+    onParticipantLeave: (participant: Participant) => void;
+    registerParticipantStates: (
+      participantStates: { participant: Participant; isSpeaking: boolean }[]
+    ) => void;
+    debugMutationLog: (mutationData: any) => void;
+    isDebug: () => boolean;
   }
 }
 
@@ -52,11 +59,17 @@ export class MeetsBot extends Bot {
   page!: Page;
   kicked: boolean = false;
   recordingPath: string;
-  debug: boolean = process.env.DEBUG === "true";
+  debug: boolean;
 
   private ffmpegProcess: ChildProcessWithoutNullStreams | null = null;
-  private participantCount = 0;
+  private participants: Participant[] = [];
+  private speakerTimeframes: {
+    [participantName: string]: [[number, number?]];
+  } = {};
   private timeAloneStarted = Infinity;
+  private lastActivity: number | undefined = undefined;
+  private joinedAt: number = 0;
+  private maxDuration: number = 75 * 60 * 1000;
 
   /**
    *
@@ -68,7 +81,11 @@ export class MeetsBot extends Bot {
     onEvent: (eventType: EventCode, data?: any) => Promise<void>
   ) {
     super(botSettings, onEvent);
-    this.recordingPath = "./recording.mp4";
+    this.debug = process.env.DEBUG ? true : false;
+    console.log("Debug Mode is ", this.debug ? "ON" : "OFF");
+    this.recordingPath = this.debug
+      ? `/debugdir/recording-${botSettings.id}.mp4`
+      : `./recording.mp4`;
 
     this.browserArgs = [
       "--incognito",
@@ -91,6 +108,10 @@ export class MeetsBot extends Bot {
     return this.recordingPath;
   }
 
+  getSpeakerTimeframes(): { [participantName: string]: [[number, number?]] } {
+    return this.speakerTimeframes;
+  }
+
   getContentType(): string {
     return "video/mp4";
   }
@@ -108,7 +129,7 @@ export class MeetsBot extends Bot {
       args: this.browserArgs,
     });
 
-    const vp = { width: 1280, height: 720 };
+    const vp = { width: 1280, height: 1024 };
     const context = await this.browser.newContext({
       permissions: ["camera", "microphone"],
       userAgent,
@@ -121,11 +142,6 @@ export class MeetsBot extends Bot {
     this.page.on("console", (msg) => {
       console.log(`[BROWSER][${msg.type()}] ${msg.text()}`);
     });
-
-    if (this.debug) {
-      setupNetworkLogging(this.page, true);
-      await attachMutationObserver(this.page, "body");
-    }
 
     await this.page.waitForTimeout(randomDelay(1000));
 
@@ -214,25 +230,34 @@ export class MeetsBot extends Bot {
 
     console.log("Starting ffmpeg recording...");
 
+    const videoInputFormat = "x11grab";
+    const audioInputFormat = "pulse";
+    const videoSource = ":99.0";
+    const audioSource = "VirtualSink.monitor";
+    const audioBitrate = "128k";
+    const fps = "15";
+
     const ffmpegArgs = [
       "-thread_queue_size",
       "512",
       "-video_size",
-      "1280x720",
+      "1280x1024",
       "-framerate",
-      "15",
+      fps,
       "-f",
-      "x11grab",
+      videoInputFormat,
       "-i",
-      ":99.0",
+      videoSource,
       "-thread_queue_size",
       "512",
       "-f",
-      "pulse",
+      audioInputFormat,
       "-i",
-      "VirtualSink.monitor",
+      audioSource,
       "-c:v",
       "libx264",
+      "-pix_fmt",
+      "yuv420p", // Required for compatibility with browser players
       "-preset",
       "medium",
       "-crf",
@@ -240,15 +265,26 @@ export class MeetsBot extends Bot {
       "-c:a",
       "aac",
       "-b:a",
-      "128k",
+      audioBitrate,
       "-vsync",
       "2",
+      "-vf",
+      "crop=1280:914:0:110",
       "-y",
       this.getRecordingPath(),
     ];
 
     this.ffmpegProcess = spawn("ffmpeg", ffmpegArgs);
     console.log("ffmpeg recording started.");
+
+    // This may be too noisy
+    this.ffmpegProcess.stdout.on("data", (data) => {
+      console.log(`ffmpeg: ${data}`);
+    });
+
+    this.ffmpegProcess.stderr.on("data", (data) => {
+      console.error(`ffmpeg: ${data}`);
+    });
 
     this.ffmpegProcess.on("exit", (code) => {
       console.log(`ffmpeg process exited with code ${code}`);
@@ -306,95 +342,148 @@ export class MeetsBot extends Bot {
   }
 
   async meetingActions() {
-    await this.page.waitForSelector(peopleButton);
-    await this.page.click(peopleButton);
+    // await this.page.waitForSelector(peopleButton);
+    // await this.page.click(peopleButton);
 
-    await this.page.waitForSelector('[aria-label="Participants"]', {
-      state: "visible",
-    });
+    // await this.page.waitForSelector('[aria-label="Participants"]', {
+    //   state: "visible",
+    // });
+
+    // Wait for participant rectangles to load
+    this.joinedAt = Date.now();
+    await this.page.waitForSelector('div[class="oZRSLe"]');
 
     console.log("Starting Recording");
     await this.startRecording();
 
     await this.page.exposeFunction(
       "onParticipantJoin",
-      async (participantId: string) => {
-        await this.onEvent(EventCode.PARTICIPANT_JOIN, { participantId });
+      async (participant: Participant) => {
+        this.participants.push(participant);
+        await this.onEvent(EventCode.PARTICIPANT_JOIN, participant);
       }
     );
 
     await this.page.exposeFunction(
       "onParticipantLeave",
-      async (participantId: string) => {
-        await this.onEvent(EventCode.PARTICIPANT_LEAVE, { participantId });
+      async (participant: Participant) => {
+        await this.onEvent(EventCode.PARTICIPANT_LEAVE, participant);
+        this.participants = this.participants.filter(
+          (p) => p.id !== participant.id
+        );
+        this.timeAloneStarted =
+          this.participants.length === 1 ? Date.now() : Infinity;
       }
     );
 
-    await this.page.exposeFunction("addParticipantCount", (count: number) => {
-      this.participantCount += count;
-      console.log("Updated Participant Count:", this.participantCount);
-      this.timeAloneStarted =
-        this.participantCount === 1 ? Date.now() : Infinity;
-    });
+    await this.page.exposeFunction(
+      "registerParticipantStates",
+      async (
+        participantStates: { participant: Participant; isSpeaking: boolean }[]
+      ) => {
+        // Check whether a participant has joined or left
+        if (participantStates.length > this.participants.length) {
+          console.log("New participant joined");
+          this.participants.push(
+            participantStates.find(
+              (ps) => !this.participants.find((p) => p.id === ps.participant.id)
+            )!.participant
+          );
+        } else if (participantStates.length < this.participants.length) {
+          console.log("Participant left");
+          this.participants = this.participants.filter((p) =>
+            participantStates.find((ps) => ps.participant.id === p.id)
+          );
+          this.timeAloneStarted =
+            this.participants.length <= 1 ? Date.now() : Infinity;
+        }
 
-    // Add mutation observer for participant list
-    // Use in the browser context to monitor for participants joining and leaving
+        // Check whether a participant is speaking
+        participantStates.forEach(async (state) => {
+          if (state.isSpeaking) {
+            this.lastActivity = Date.now();
+            if (!this.speakerTimeframes[state.participant.name]) {
+              this.speakerTimeframes[state.participant.name] = [[Date.now()]];
+            } else {
+              const latestTimeframe =
+                this.speakerTimeframes[state.participant.name]!.at(-1)!;
+
+              if (latestTimeframe.length === 2) {
+                // Latest timeframe is completed, create a new timeframe
+                this.speakerTimeframes[state.participant.name]!.push([
+                  Date.now(),
+                ]);
+              }
+            }
+          } else if (!state.isSpeaking) {
+            if (this.speakerTimeframes[state.participant.name]) {
+              const latestTimeframe =
+                this.speakerTimeframes[state.participant.name]!.at(-1)!;
+              if (latestTimeframe.length === 1) {
+                // participant stopped speaking, complete the timeframe
+                latestTimeframe.push(Date.now());
+              }
+            }
+          }
+        });
+      }
+    );
+
+    await this.page.exposeFunction(
+      "addParticipant",
+      async (participant: Participant) => {
+        this.participants.push(participant);
+      }
+    );
+
+    // Use in the browser context to monitor for participants joining, speaking and leaving
     await this.page.evaluate(() => {
-      const peopleList = document.querySelector('[aria-label="Participants"]');
-      if (!peopleList) {
-        console.error("Could not find participants list element");
+      const participantRectangleSelector = 'div[class="oZRSLe"]';
+      const participantActivityBorderSelector =
+        'div[class="tC2Wod ACcyyc t9yCsb kssMZb"]';
+      const participantRectangles = document.querySelectorAll(
+        participantRectangleSelector
+      );
+      if (!participantRectangles) {
+        console.error("Could not find any participant rectangles");
         return;
       }
 
-      const initialParticipants = peopleList.querySelectorAll(
-        "[data-participant-id]"
-      ).length;
-      window.addParticipantCount(initialParticipants);
-
-      console.log("Setting up mutation observer on participants list");
-      const observer = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-          if (mutation.type === "childList") {
-            mutation.addedNodes.forEach((node: any) => {
-              if (
-                node.getAttribute &&
-                node.getAttribute("data-participant-id")
-              ) {
-                console.log(
-                  "Participant joined:",
-                  node.getAttribute("data-participant-id")
-                );
-                // @ts-ignore
-                window.onParticipantJoin(
-                  node.getAttribute("data-participant-id")
-                );
-                window.addParticipantCount(1);
-              }
-            });
-            mutation.removedNodes.forEach((node: any) => {
-              if (
-                node.getAttribute &&
-                node.getAttribute("data-participant-id")
-              ) {
-                console.log(
-                  "Participant left:",
-                  node.getAttribute("data-participant-id")
-                );
-                // @ts-ignore
-                window.onParticipantLeave(
-                  node.getAttribute("data-participant-id")
-                );
-                window.addParticipantCount(-1);
-              }
-            });
-          }
-        });
+      // Add existing participants to the list
+      participantRectangles.forEach((node: any) => {
+        console.log("Adding existing participant");
+        const participantId = node.getAttribute("data-participant-id")!;
+        const participantName =
+          node.querySelector("span.notranslate")?.textContent || "Unknown";
+        window.addParticipant({ id: participantId, name: participantName });
       });
-      observer.observe(peopleList, { childList: true, subtree: true });
+
+      setInterval(() => {
+        const participantRectangles = document.querySelectorAll(
+          participantRectangleSelector
+        );
+        const participantStates = Array.from(participantRectangles).map(
+          (node: any) => {
+            const participantId = node.getAttribute("data-participant-id")!;
+            const participantName =
+              node.querySelector("span.notranslate")?.textContent || "Unknown";
+            const isSpeaking = node.querySelector(
+              participantActivityBorderSelector
+            );
+            return {
+              participant: { id: participantId, name: participantName },
+              isSpeaking,
+            };
+          }
+        );
+        window.registerParticipantStates(participantStates);
+      }, 500);
     });
 
     while (true) {
-      if (this.participantCount === 1) {
+      console.log(this.speakerTimeframes);
+      this.participants.forEach((p) => console.log(p.id, p.name));
+      if (this.participants.length === 1) {
         const leaveMs = this.settings.automaticLeave.everyoneLeftTimeout;
         const msDiff = Date.now() - this.timeAloneStarted;
         console.log(
@@ -426,6 +515,18 @@ export class MeetsBot extends Bot {
       ) {
         this.kicked = true;
         console.log("Kicked");
+        break;
+      }
+
+      // Check if the bot has been in the meeting for too long (maybe add a setting)
+      if (Date.now() - this.joinedAt > this.maxDuration) {
+        console.log("Max Duration Reached");
+        break;
+      }
+
+      // Check if there has been no activity for 5 minutes, case for when only bots stay in the meeting
+      if (this.lastActivity && Date.now() - this.lastActivity > 300000) {
+        console.log("No Activity for 5 minutes");
         break;
       }
 
