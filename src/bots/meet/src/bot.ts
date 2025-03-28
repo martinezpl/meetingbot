@@ -69,7 +69,7 @@ export class MeetsBot extends Bot {
   private timeAloneStarted = Infinity;
   private lastActivity: number | undefined = undefined;
   private joinedAt: number = 0;
-  private maxDuration: number = 75 * 60 * 1000;
+  private maxDuration: number = 1000 * 60 * 180;
 
   /**
    *
@@ -257,7 +257,7 @@ export class MeetsBot extends Bot {
       "-c:v",
       "libx264",
       "-pix_fmt",
-      "yuv420p", // Required for compatibility with browser players
+      "yuv420p", // Better compatibility with browser players
       "-preset",
       "medium",
       "-crf",
@@ -354,6 +354,7 @@ export class MeetsBot extends Bot {
 
     console.log("Starting Recording");
     await this.startRecording();
+    // TODO: Probably gotta timestamp the exact start of the recording to align with transcript later
     this.joinedAt = Date.now();
 
     await this.page.exposeFunction(
