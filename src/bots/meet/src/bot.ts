@@ -44,9 +44,9 @@ declare global {
     addParticipant: (participant: Participant) => void;
     onParticipantJoin: (participant: Participant) => void;
     onParticipantLeave: (participant: Participant) => void;
-    registerParticipantStates: (
-      participantStates: { participant: Participant; isSpeaking: boolean }[]
-    ) => void;
+    updateParticipants: (participants: Participant[]) => void;
+    registerParticipantSpeaking: (participant: Participant) => void;
+    observeSpeech: (node: any, participant: Participant) => void;
     debugMutationLog: (mutationData: any) => void;
     isDebug: () => boolean;
   }
@@ -64,11 +64,11 @@ export class MeetsBot extends Bot {
   private ffmpegProcess: ChildProcessWithoutNullStreams | null = null;
   private participants: Participant[] = [];
   private speakerTimeframes: {
-    [participantName: string]: [[number, number?]];
+    [participantName: string]: [number];
   } = {};
   private timeAloneStarted = Infinity;
   private lastActivity: number | undefined = undefined;
-  private joinedAt: number = 0;
+  private recordingStartedAt: number = 0;
   private maxDuration: number = 1000 * 60 * 180;
 
   /**
@@ -108,8 +108,41 @@ export class MeetsBot extends Bot {
     return this.recordingPath;
   }
 
-  getSpeakerTimeframes(): { [participantName: string]: [[number, number?]] } {
-    return this.speakerTimeframes;
+  getSpeakerTimeframes(): {
+    speakerName: string;
+    start: number;
+    end: number;
+  }[] {
+    const processedTimeframes: {
+      speakerName: string;
+      start: number;
+      end: number;
+    }[] = [];
+
+    const threshold = 3000;
+    for (const [speakerName, timeframesArray] of Object.entries(
+      this.speakerTimeframes
+    )) {
+      let start = timeframesArray[0];
+      let end = timeframesArray[0];
+
+      for (let i = 1; i < timeframesArray.length; i++) {
+        const currentTimeframe = timeframesArray[i]!;
+        if (currentTimeframe - end < threshold) {
+          end = currentTimeframe;
+        } else {
+          if (end - start > 500) {
+            processedTimeframes.push({ speakerName, start, end });
+          }
+          start = currentTimeframe;
+          end = currentTimeframe;
+        }
+      }
+      processedTimeframes.push({ speakerName, start, end });
+    }
+    processedTimeframes.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    return processedTimeframes;
   }
 
   getContentType(): string {
@@ -276,14 +309,14 @@ export class MeetsBot extends Bot {
 
     this.ffmpegProcess = spawn("ffmpeg", ffmpegArgs);
     console.log("ffmpeg recording started.");
-
+    this.recordingStartedAt = Date.now();
     // This may be too noisy
     this.ffmpegProcess.stdout.on("data", (data) => {
       console.log(`ffmpeg: ${data}`);
     });
 
     this.ffmpegProcess.stderr.on("data", (data) => {
-      console.error(`ffmpeg: ${data}`);
+      console.error(`ffmpeg err: ${data}`);
     });
 
     this.ffmpegProcess.on("exit", (code) => {
@@ -342,20 +375,15 @@ export class MeetsBot extends Bot {
   }
 
   async meetingActions() {
-    // await this.page.waitForSelector(peopleButton);
-    // await this.page.click(peopleButton);
+    await this.page.waitForSelector(peopleButton);
+    await this.page.click(peopleButton);
 
-    // await this.page.waitForSelector('[aria-label="Participants"]', {
-    //   state: "visible",
-    // });
-
-    // Wait for participant rectangles to load
-    await this.page.waitForSelector('div[class="oZRSLe"]');
+    await this.page.waitForSelector('[aria-label="Participants"]', {
+      state: "visible",
+    });
 
     console.log("Starting Recording");
     await this.startRecording();
-    // TODO: Probably gotta timestamp the exact start of the recording to align with transcript later
-    this.joinedAt = Date.now();
 
     await this.page.exposeFunction(
       "onParticipantJoin",
@@ -378,110 +406,140 @@ export class MeetsBot extends Bot {
     );
 
     await this.page.exposeFunction(
-      "registerParticipantStates",
-      async (
-        participantStates: { participant: Participant; isSpeaking: boolean }[]
-      ) => {
-        // Check whether a participant has joined or left
-        if (participantStates.length > this.participants.length) {
-          console.log("New participant joined");
-          this.participants.push(
-            participantStates.find(
-              (ps) => !this.participants.find((p) => p.id === ps.participant.id)
-            )!.participant
-          );
-        } else if (participantStates.length < this.participants.length) {
-          console.log("Participant left");
-          this.participants = this.participants.filter((p) =>
-            participantStates.find((ps) => ps.participant.id === p.id)
-          );
-          this.timeAloneStarted =
-            this.participants.length <= 1 ? Date.now() : Infinity;
-        }
-
-        // Check whether a participant is speaking
-        participantStates.forEach(async (state) => {
-          const relativeTimestamp = Date.now() - this.joinedAt;
-          if (state.isSpeaking) {
-            this.lastActivity = Date.now();
-            if (!this.speakerTimeframes[state.participant.name]) {
-              this.speakerTimeframes[state.participant.name] = [
-                [relativeTimestamp],
-              ];
-            } else {
-              const latestTimeframe =
-                this.speakerTimeframes[state.participant.name]!.at(-1)!;
-
-              if (latestTimeframe.length === 2) {
-                // Latest timeframe is completed, create a new timeframe
-                this.speakerTimeframes[state.participant.name]!.push([
-                  relativeTimestamp,
-                ]);
-              }
-            }
-          } else if (!state.isSpeaking) {
-            if (this.speakerTimeframes[state.participant.name]) {
-              const latestTimeframe =
-                this.speakerTimeframes[state.participant.name]!.at(-1)!;
-              if (latestTimeframe.length === 1) {
-                // participant stopped speaking, complete the timeframe
-                latestTimeframe.push(relativeTimestamp);
-              }
-            }
+      "updateParticipants",
+      async (participants: Participant[]) => {
+        participants.forEach(async (p) => {
+          if (!this.participants.find((x) => x.id === p.id)) {
+            this.participants.push(p);
+            await this.onEvent(EventCode.PARTICIPANT_JOIN, p);
+          } else if (this.participants.find((x) => x.id === p.id)) {
+            await this.onEvent(EventCode.PARTICIPANT_LEAVE, p);
+            this.participants = this.participants.filter((p) => p.id !== p.id);
+            this.timeAloneStarted =
+              this.participants.length === 1 ? Date.now() : Infinity;
           }
         });
       }
     );
 
     await this.page.exposeFunction(
+      "registerParticipantSpeaking",
+      (participant: Participant) => {
+        this.lastActivity = Date.now();
+        const relativeTimestamp = Date.now() - this.recordingStartedAt;
+        console.log(
+          `Participant ${participant.name} is speaking at ${relativeTimestamp}ms`
+        );
+
+        if (!this.speakerTimeframes[participant.name]) {
+          this.speakerTimeframes[participant.name] = [relativeTimestamp];
+        } else {
+          this.speakerTimeframes[participant.name]!.push(relativeTimestamp);
+        }
+      }
+    );
+
+    await this.page.exposeFunction(
       "addParticipant",
       async (participant: Participant) => {
+        console.log("Adding participant:", participant);
         this.participants.push(participant);
       }
     );
 
     // Use in the browser context to monitor for participants joining, speaking and leaving
     await this.page.evaluate(() => {
-      const participantRectangleSelector = 'div[class="oZRSLe"]';
-      const participantActivityBorderSelector =
-        'div[class="tC2Wod ACcyyc t9yCsb kssMZb"]';
-      const participantRectangles = document.querySelectorAll(
-        participantRectangleSelector
-      );
-      if (!participantRectangles) {
-        console.error("Could not find any participant rectangles");
+      const peopleList = document.querySelector('[aria-label="Participants"]');
+      if (!peopleList) {
+        console.error("Could not find participants list element");
         return;
       }
 
-      // Add existing participants to the list
-      participantRectangles.forEach((node: any) => {
-        console.log("Adding existing participant");
-        const participantId = node.getAttribute("data-participant-id")!;
-        const participantName =
-          node.querySelector("span.notranslate")?.textContent || "Unknown";
-        window.addParticipant({ id: participantId, name: participantName });
+      const initialParticipants = peopleList.childNodes;
+
+      // @ts-ignore
+      window.observeSpeech = (node, participant) => {
+        console.log("Observing speech for participant:", participant.name);
+        const activityObserver = new MutationObserver((mutations) => {
+          mutations.forEach(() => {
+            console.log(
+              "Participant speaking inside callback:",
+              participant.name
+            );
+            window.registerParticipantSpeaking(participant);
+          });
+        });
+        console.log("attaching observer");
+        activityObserver.observe(node, {
+          attributes: true,
+          subtree: true,
+          childList: true,
+          attributeFilter: ["class"],
+        });
+      };
+
+      initialParticipants.forEach((node: any) => {
+        const participant = {
+          id: node.getAttribute("data-participant-id"),
+          name: node.getAttribute("aria-label"),
+        };
+        window.addParticipant(participant);
+        window.observeSpeech(node, participant);
       });
 
-      setInterval(() => {
-        const participantRectangles = document.querySelectorAll(
-          participantRectangleSelector
-        );
-        const participantStates = Array.from(participantRectangles).map(
-          (node: any) => {
-            const participantId = node.getAttribute("data-participant-id")!;
-            const participantName =
-              node.querySelector("span.notranslate")?.textContent || "Unknown";
-            const isSpeaking = node.querySelector(
-              participantActivityBorderSelector
-            );
-            return {
-              participant: { id: participantId, name: participantName },
-              isSpeaking,
-            };
+      console.log("Setting up mutation observer on participants list");
+      const peopleObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === "childList") {
+            mutation.addedNodes.forEach((node: any) => {
+              if (
+                node.getAttribute &&
+                node.getAttribute("data-participant-id")
+              ) {
+                console.log(
+                  "Participant joined:",
+                  node.getAttribute("aria-label")
+                );
+                const participant = {
+                  id: node.getAttribute("data-participant-id"),
+                  name: node.getAttribute("aria-label"),
+                };
+                window.onParticipantJoin(participant);
+                window.observeSpeech(node, participant);
+              }
+            });
+            mutation.removedNodes.forEach((node: any) => {
+              if (
+                node.nodeType === Node.ELEMENT_NODE &&
+                node.getAttribute &&
+                node.getAttribute("data-participant-id")
+              ) {
+                console.log(
+                  "Participant left:",
+                  node.getAttribute("aria-label")
+                );
+                window.onParticipantLeave({
+                  id: node.getAttribute("data-participant-id"),
+                  name: node.getAttribute("aria-label"),
+                });
+              } else {
+                const newParticipantList: any = [];
+                document
+                  .querySelector('[aria-label="Participants"]')
+                  ?.childNodes.forEach((node: any) => {
+                    const participant = {
+                      id: node.getAttribute("data-participant-id"),
+                      name: node.getAttribute("aria-label"),
+                    };
+                    newParticipantList.push(participant);
+                  });
+                window.updateParticipants(newParticipantList);
+              }
+            });
           }
-        );
-        window.registerParticipantStates(participantStates);
-      }, 500);
+        });
+      });
+      peopleObserver.observe(peopleList, { childList: true, subtree: true });
     });
 
     while (true) {
@@ -523,7 +581,10 @@ export class MeetsBot extends Bot {
       }
 
       // Check if the bot has been in the meeting for too long (maybe add a setting)
-      if (Date.now() - this.joinedAt > this.maxDuration) {
+      if (
+        this.recordingStartedAt &&
+        Date.now() - this.recordingStartedAt > this.maxDuration
+      ) {
         console.log("Max Duration Reached");
         break;
       }

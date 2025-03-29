@@ -243,8 +243,8 @@ export const bots = pgTable('bots', {
   automaticLeave: json('automatic_leave').$type<AutomaticLeave>().notNull(),
   metadata: json('metadata').$type<Record<string, any>>().default({}),
   speakerTimeframes: json('speaker_timeframes')
-    .$type<Record<string, any>>() // TODO: fix type
-    .default({}),
+    .$type<Record<string, any>[]>()
+    .default([]),
   callbackUrl: varchar('callback_url', { length: 1024 }),
   // timestamps
   createdAt: timestamp('created_at').defaultNow(),
