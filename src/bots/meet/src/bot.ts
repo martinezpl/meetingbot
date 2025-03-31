@@ -301,6 +301,8 @@ export class MeetsBot extends Bot {
       audioBitrate,
       "-vsync",
       "2",
+      "-movflags",
+      "+faststart",
       "-vf",
       "crop=1280:914:0:110",
       "-y",
