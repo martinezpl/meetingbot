@@ -592,7 +592,11 @@ export class MeetsBot extends Bot {
       }
 
       // Check if there has been no activity for 5 minutes, case for when only bots stay in the meeting
-      if (this.lastActivity && Date.now() - this.lastActivity > 300000) {
+      if (
+        this.participants.length > 1 &&
+        this.lastActivity &&
+        Date.now() - this.lastActivity > 300000
+      ) {
         console.log("No Activity for 5 minutes");
         break;
       }
