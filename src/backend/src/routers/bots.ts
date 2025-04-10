@@ -210,21 +210,20 @@ export const botsRouter = createTRPCRouter({
             speakerTimeframes: input.speakerTimeframes,
           })
           .where(eq(bots.id, bot.id))
-
-        if (bot.callbackUrl) {
-          console.log('Calling callback URL...')
-          // call the callback url
-          try {
-            await fetch(bot.callbackUrl, {
-              method: 'POST',
-              body: JSON.stringify({
-                botId: bot.id,
-                status: input.status,
-              }),
-            })
-          } catch (error) {
-            console.error('Error calling callback URL:', error)
-          }
+      }
+      if (bot.callbackUrl) {
+        console.log('Calling callback URL...')
+        // call the callback url
+        try {
+          await fetch(bot.callbackUrl, {
+            method: 'POST',
+            body: JSON.stringify({
+              botId: bot.id,
+              status: input.status,
+            }),
+          })
+        } catch (error) {
+          console.error('Error calling callback URL:', error)
         }
       }
       return result[0]

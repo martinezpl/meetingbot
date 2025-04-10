@@ -39,6 +39,7 @@ export enum Status {
   CALL_ENDED = "CALL_ENDED",
   DONE = "DONE",
   FATAL = "FATAL",
+  NOT_ADMITTED = "NOT_ADMITTED",
 }
 
 export enum EventCode {
@@ -46,6 +47,7 @@ export enum EventCode {
   DEPLOYING = Status.DEPLOYING,
   JOINING_CALL = Status.JOINING_CALL,
   IN_WAITING_ROOM = Status.IN_WAITING_ROOM,
+  NOT_ADMITTED = Status.NOT_ADMITTED,
   IN_CALL = Status.IN_CALL,
   CALL_ENDED = Status.CALL_ENDED,
   DONE = Status.DONE,

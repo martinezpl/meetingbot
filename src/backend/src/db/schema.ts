@@ -178,6 +178,7 @@ export const status = z.enum([
   'CALL_ENDED',
   'DONE',
   'FATAL',
+  'NOT_ADMITTED',
 ])
 export type Status = z.infer<typeof status>
 
@@ -206,6 +207,7 @@ export const EVENT_DESCRIPTIONS = {
   CALL_ENDED:
     'The bot has left the call. The data.sub_code and data.description will contain the reason for why the call ended.',
   DONE: 'The bot has shut down.',
+  NOT_ADMITTED: 'The bot was not admitted into the call.',
   FATAL:
     'The bot has encountered an error. The data.sub_code and data.description will contain the reason for the failure.',
   LOG: "Catch-all for any logs that were produced that don't fit any other event type. The data.message will contain the log contents.",
