@@ -19,9 +19,12 @@ const userAgent =
 
 const enterNameField = 'input[type="text"][aria-label="Your name"]';
 const askToJoinButton = '//button[.//span[text()="Ask to join"]]';
+const joinNowButton = '//button[.//span[text()="Join now"]]';
 const gotKickedDetector = '//button[.//span[text()="Return to home screen"]]';
 const leaveButton = `//button[@aria-label="Leave call"]`;
 const peopleButton = `//button[@aria-label="People"]`;
+
+const infoPopupClick = `//button[.//span[text()="Got it"]]`;
 
 type Participant = {
   id: string;
@@ -224,9 +227,14 @@ export class MeetsBot extends Bot {
     console.log("Filling the input field with the name...");
     await this.page.fill(enterNameField, name);
 
-    console.log('Waiting for the "Ask to join" button...');
-    await this.page.waitForSelector(askToJoinButton, { timeout: 60000 });
-    await this.page.click(askToJoinButton);
+    console.log('Waiting for either the "Join now" or "Ask to join" button to appear...');
+    const entryButton = await Promise.race([
+      this.page.waitForSelector(joinNowButton, { timeout: 60000 }).then(() => joinNowButton),
+      this.page.waitForSelector(askToJoinButton, { timeout: 60000 }).then(() => askToJoinButton),
+    ]);
+
+    await this.page.click(entryButton);
+
     console.log("Awaiting Entry...");
     const timeout = this.settings.automaticLeave.waitingRoomTimeout;
     try {
@@ -376,7 +384,19 @@ export class MeetsBot extends Bot {
     console.log("Closed Browser.");
   }
 
+  async handleInfoPopup(timeout = 5000) {
+    try {
+      await this.page.waitForSelector(infoPopupClick, { timeout });
+    } catch (e) {
+      return;
+    }
+    console.log("Clicking the popup...");
+    await this.page.click(infoPopupClick);
+  }
+
   async meetingActions() {
+    await this.handleInfoPopup();
+
     await this.page.waitForSelector(peopleButton);
     await this.page.click(peopleButton);
 
@@ -545,7 +565,7 @@ export class MeetsBot extends Bot {
     });
 
     while (true) {
-      console.log(this.speakerTimeframes);
+      await this.handleInfoPopup(1000);
       this.participants.forEach((p) => console.log(p.id, p.name));
       if (this.participants.length === 1) {
         const leaveMs = this.settings.automaticLeave.everyoneLeftTimeout;
