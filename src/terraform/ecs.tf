@@ -113,70 +113,9 @@ resource "random_password" "auth_secret" {
 # ---------------------------------------------------------------------------------------------------------------------
 # CloudWatch Log Groups
 # ---------------------------------------------------------------------------------------------------------------------
-resource "aws_cloudwatch_log_group" "frontend" {
-  name              = "/ecs/${local.name}/frontend"
-  retention_in_days = 14
-}
-
 resource "aws_cloudwatch_log_group" "backend" {
   name              = "/ecs/${local.name}/backend"
   retention_in_days = 14
-}
-
-# ---------------------------------------------------------------------------------------------------------------------
-# Frontend Service
-# ---------------------------------------------------------------------------------------------------------------------
-resource "aws_ecs_task_definition" "frontend" {
-  family                   = "${local.name}-frontend"
-  requires_compatibilities = ["FARGATE"]
-  network_mode             = "awsvpc"
-  cpu                      = 256
-  memory                   = 512
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-
-  container_definitions = jsonencode([
-    {
-      name      = "frontend"
-      image     = var.frontend_image_url != "" ? var.frontend_image_url : "ghcr.io/meetingbot/frontend:sha-${local.current_commit_sha_short}"
-      essential = true
-      portMappings = [
-        {
-          containerPort = local.frontend_port
-          hostPort      = local.frontend_port
-          protocol      = "tcp"
-        }
-      ]
-
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.frontend.name
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "frontend"
-        }
-      }
-    }
-  ])
-}
-
-resource "aws_ecs_service" "frontend" {
-  name            = "${local.name}-frontend"
-  cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.frontend.arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
-
-  network_configuration {
-    subnets          = aws_subnet.private[*].id
-    security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = false
-  }
-
-  load_balancer {
-    target_group_arn = aws_lb_target_group.frontend.arn
-    container_name   = "frontend"
-    container_port   = local.frontend_port
-  }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -223,14 +162,6 @@ resource "aws_ecs_task_definition" "backend" {
         {
           name  = "FRONTEND_URL"
           value = "https://${var.domain_name}"
-        },
-        {
-          name  = "AUTH_GITHUB_ID"
-          value = var.auth_github_id
-        },
-        {
-          name  = "AUTH_GITHUB_SECRET"
-          value = var.auth_github_secret
         },
         {
           name  = "ECS_CLUSTER_NAME"

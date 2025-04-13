@@ -38,6 +38,7 @@ resource "aws_db_instance" "this" {
   instance_class        = "db.t4g.micro"
   allocated_storage     = 10
   max_allocated_storage = 100
+  publicly_accessible = true
 
   db_name  = "postgres"
   username = "postgres"
