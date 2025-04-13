@@ -19,18 +19,6 @@ variable "domain_name" {
   description = "The domain name to use for the website"
 }
 
-variable "auth_github_id" {
-  type        = string
-  description = "The GitHub ID for authentication"
-  sensitive   = true
-}
-
-variable "auth_github_secret" {
-  type        = string
-  description = "The GitHub secret for authentication"
-  sensitive   = true
-}
-
 variable "meet_bot_image_url" {
   type        = string
   description = "The Docker image to use for the Google Meet bot"
