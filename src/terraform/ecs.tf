@@ -149,7 +149,7 @@ resource "aws_ecs_task_definition" "backend" {
         },
         {
           name  = "DATABASE_URL"
-          value = "postgres://${aws_db_instance.this.username}:${random_password.db_password.result}@${aws_db_instance.this.endpoint}/${aws_db_instance.this.db_name}"
+          value = "postgres://${aws_db_instance.this.username}:${random_password.db_password.result}@${aws_db_instance.this.endpoint}/${aws_db_instance.this.db_name}?sslmode=require"
         },
         {
           name  = "AUTH_TRUST_HOST"
@@ -181,7 +181,7 @@ resource "aws_ecs_task_definition" "backend" {
         },
         {
           name  = "ECS_SUBNETS"
-          value = join(",", aws_subnet.private[*].id)
+          value = join(",", aws_subnet.public[*].id)
         },
         {
           name  = "ECS_SECURITY_GROUPS"
@@ -217,9 +217,9 @@ resource "aws_ecs_service" "backend" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = aws_subnet.private[*].id
+    subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = false
+    assign_public_ip = true
   }
 
   load_balancer {
@@ -227,6 +227,7 @@ resource "aws_ecs_service" "backend" {
     container_name   = "backend"
     container_port   = local.backend_port
   }
+  propagate_tags = "TASK_DEFINITION"
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
