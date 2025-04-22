@@ -56,3 +56,18 @@ export enum EventCode {
   PARTICIPANT_LEAVE = "PARTICIPANT_LEAVE",
   LOG = "LOG",
 }
+
+
+export class WaitingRoomTimeoutError extends Error {
+  constructor(message: string = "The ") {
+    super(message);
+    this.name = "WaitingRoomTimeoutError";
+  }
+}
+//
+export class MeetingJoinError extends Error {
+  constructor(message: string = "Simulated Meeting Join Error") {
+    super(message);
+    this.name = "MeetingJoinError";
+  }
+}

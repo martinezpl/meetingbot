@@ -1,13 +1,14 @@
-FROM --platform=linux/amd64 ghcr.io/puppeteer/puppeteer:latest
+# If you ever do `pnpm install puppeteer@latest` in the future, make sure to update this line as well.
+FROM --platform=linux/amd64 ghcr.io/puppeteer/puppeteer:24.7.0
 
 ENV \
     # Configure default locale (important for chrome-headless-shell).
     LANG=en_US.UTF-8 \
     # UID of the non-root user 'pptruser'
     PPTRUSER_UID=10042 \
-    # Set the Chrome path to match the actual installation
-    PUPPETEER_EXECUTABLE_PATH=/home/pptruser/.cache/puppeteer/chrome/linux-134.0.6998.35/chrome-linux64/chrome
-
+    # Get meeting platform this file is built for
+    DOCKER_MEETING_PLATFORM=zoom
+    
 # Stay as root for all installation steps
 USER root
 
@@ -20,14 +21,16 @@ WORKDIR /home/pptruser
 # Copy files
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY zoom/package.json zoom/pnpm-lock.yaml ./zoom/
-COPY src ./src
-COPY zoom/src ./zoom/src
 
 # Install dependencies as root
 RUN pnpm install --filter "@bots/zoom" --filter "bots"
 
 # Install browser
 RUN pnpm dlx puppeteer browsers install chrome
+
+# Copy the rest of the application files last
+COPY src ./src
+COPY zoom/src ./zoom/src
 
 # Change ownership of all files after installation
 RUN chown -R pptruser:pptruser /home/pptruser

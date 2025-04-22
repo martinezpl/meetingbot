@@ -1,9 +1,15 @@
 import fs from "fs";
-import puppeteer from "puppeteer";
+import puppeteer, { Browser, Page } from "puppeteer";
 import { launch, getStream, wss } from "puppeteer-stream";
-import crypto from "crypto";
-import { BotConfig, EventCode } from "../../src/types";
+import { BotConfig, EventCode, WaitingRoomTimeoutError } from "../../src/types";
 import { Bot } from "../../src/bot";
+import path from "path";
+import { Transform } from "stream";
+
+const leaveButtonSelector =
+  'button[aria-label="Leave (Ctrl+Shift+H)"], button[aria-label="Leave (⌘+Shift+H)"], button[aria-label="Leave"]';
+
+const joinMeetingOnBrowser = 'button[aria-label="Join meeting from this browser"]'
 
 export class TeamsBot extends Bot {
   recordingPath: string;
@@ -11,78 +17,137 @@ export class TeamsBot extends Bot {
   url: string;
   participants: string[];
   participantsIntervalId: NodeJS.Timeout;
+  browser!: Browser;
+  page!: Page;
+  file!: fs.WriteStream;
+  stream!: Transform;
+  joinedAt: Date | null = null;
 
   constructor(
     botSettings: BotConfig,
     onEvent: (eventType: EventCode, data?: any) => Promise<void>
   ) {
     super(botSettings, onEvent);
-    this.recordingPath = "./recording.webm";
+    this.recordingPath = "/recording.webm";
     this.contentType = "video/webm";
-    this.url = `https://teams.microsoft.com/v2/?meetingjoin=true#/l/meetup-join/19:meeting_${this.settings.meetingInfo.meetingId}@thread.v2/0?context=%7b%22Tid%22%3a%22${this.settings.meetingInfo.tenantId}%22%2c%22Oid%22%3a%22${this.settings.meetingInfo.organizerId}%22%7d&anon=true`;
+    if (!this.settings.meetingInfo.meetingUrl) {
+      this.url = `https://teams.microsoft.com/v2/?meetingjoin=true#/l/meetup-join/19:meeting_${this.settings.meetingInfo.meetingId}@thread.v2/0?context=%7b%22Tid%22%3a%22${this.settings.meetingInfo.tenantId}%22%2c%22Oid%22%3a%22${this.settings.meetingInfo.organizerId}%22%7d&anon=true`;
+    } else {
+      this.url = this.settings.meetingInfo.meetingUrl!;
+    }
     this.participants = [];
-    this.participantsIntervalId = setInterval(() => {}, 0);
+    this.participantsIntervalId = setInterval(() => { }, 0);
   }
 
   getRecordingPath(): string {
     return this.recordingPath;
   }
 
-  getSpeakerTimeframes() {
-    return {};
-  }
-
   getContentType(): string {
     return this.contentType;
   }
 
-  async run() {
-    const file = fs.createWriteStream(this.recordingPath);
+  getSpeakerTimeframes() {
+    return {};
+  }
 
-    const leaveButtonSelector =
-      'button[aria-label="Leave (Ctrl+Shift+H)"], button[aria-label="Leave (⌘+Shift+H)"]';
+  async screenshot(fName: string = "screenshot.png") {
+    try {
+      if (!this.page) throw new Error("Page not initialized");
+      if (!this.browser) throw new Error("Browser not initialized");
+
+      const screenshot = await this.page.screenshot({
+        type: "png",
+        encoding: "binary",
+      });
+
+      // Save the screenshot to a file
+      const screenshotPath = path.resolve(`/tmp/${fName}`);
+      fs.writeFileSync(screenshotPath, screenshot);
+      console.log(`Screenshot saved to ${screenshotPath}`);
+    } catch (e) {
+      console.log('Error taking screenshot:', e);
+    }
+  }
+
+  async observeEverybodyLeft(): Promise<any> {
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      if (this.participants.length == 1 && this.joinedAt && Date.now() > this.joinedAt.getTime() + this.settings.automaticLeave.noOneJoinedTimeout) {
+        console.log("Everybody left, leaving the meeting");
+        return;
+      }
+    }
+  }
+
+  async observeMeetingEnded(): Promise<any> {
+    return this.page.waitForFunction(
+      (selector) => !document.querySelector(selector),
+      { timeout: 0 }, // wait indefinitely
+      leaveButtonSelector
+    );
+  }
+
+  async launchBrowser() {
 
     // Launch the browser and open a new blank page
-    const browser = await launch({
+    this.browser = await launch({
       executablePath: puppeteer.executablePath(),
-      //headless: "new",
+      headless: "new",
       // args: ["--use-fake-ui-for-media-stream"],
-      args: ["--no-sandbox"],
+      args: [
+        "--no-sandbox",
+      ],
       protocolTimeout: 0,
-    });
+    }) as unknown as Browser;
 
     // Parse the URL
+    console.log("Parsing URL:", this.url);
     const urlObj = new URL(this.url);
 
     // Override camera and microphone permissions
-    const context = browser.defaultBrowserContext();
+    const context = this.browser.defaultBrowserContext();
     context.clearPermissionOverrides();
     context.overridePermissions(urlObj.origin, ["camera", "microphone"]);
 
     // Open a new page
-    const page = await browser.newPage();
+    this.page = await this.browser.newPage();
+    console.log('Opened Page');
+  }
 
-    // Log all console messages
-    page.on("console", (msg) =>
-      console.log("\x1b[36m[BROWSER CONSOLE]\x1b[0m", msg.text())
-    );
 
+  async joinMeeting() {
     // Navigate the page to a URL
-    await page.goto(urlObj.href);
+    const urlObj = new URL(this.url);
+    console.log("Navigating to URL:", urlObj.href);
+    await this.page.goto(urlObj.href);
+
+    // Optionally, there might be a "Join meeting from this browser" button
+    try {
+      await this.page.waitForSelector(joinMeetingOnBrowser, { timeout: 5000 });
+      await this.page.click(joinMeetingOnBrowser);
+      console.log("Clicked 'Join meeting from this browser' button");
+    }
+    catch (error) {
+      console.log("No 'Join meeting from this browser' button found");
+    }
 
     // Fill in the display name
-    await page
+    await this.page
       .locator(`[data-tid="prejoin-display-name-input"]`)
       .fill(this.settings.botDisplayName ?? "Meeting Bot");
+    console.log('Entered Display Name');
 
     // Mute microphone before joining
-    await page.locator(`[data-tid="toggle-mute"]`).click();
+    await this.page.locator(`[data-tid="toggle-mute"]`).click();
+    console.log('Muted Microphone');
 
     // Join the meeting
-    await page.locator(`[data-tid="prejoin-join-button"]`).click();
+    await this.page.locator(`[data-tid="prejoin-join-button"]`).click();
+    console.log('Found & Clicked the Join Button');
 
     // Wait until join button is disabled or disappears
-    await page.waitForFunction(
+    await this.page.waitForFunction(
       (selector) => {
         const joinButton = document.querySelector(selector);
         return !joinButton || joinButton.hasAttribute("disabled");
@@ -92,7 +157,7 @@ export class TeamsBot extends Bot {
     );
 
     // Check if we're in a waiting room by checking if the join button exists and is disabled
-    const joinButton = await page.$('[data-tid="prejoin-join-button"]');
+    const joinButton = await this.page.$('[data-tid="prejoin-join-button"]');
     const isWaitingRoom =
       joinButton &&
       (await joinButton.evaluate((button) => button.hasAttribute("disabled")));
@@ -100,14 +165,11 @@ export class TeamsBot extends Bot {
     let timeout = 30000; // if not in the waiting room, wait 30 seconds to join the meeting
     if (isWaitingRoom) {
       console.log(
-        `Joined waiting room, will wait for ${
-          this.settings.automaticLeave.waitingRoomTimeout > 60 * 1000
-            ? `${
-                this.settings.automaticLeave.waitingRoomTimeout / 60 / 1000
-              } minute(s)`
-            : `${
-                this.settings.automaticLeave.waitingRoomTimeout / 1000
-              } second(s)`
+        `Joined waiting room, will wait for ${this.settings.automaticLeave.waitingRoomTimeout > 60 * 1000
+          ? `${this.settings.automaticLeave.waitingRoomTimeout / 60 / 1000
+          } minute(s)`
+          : `${this.settings.automaticLeave.waitingRoomTimeout / 1000
+          } second(s)`
         }`
       );
 
@@ -116,23 +178,71 @@ export class TeamsBot extends Bot {
     }
 
     // wait for the leave button to appear (meaning we've joined the meeting)
-    await page.waitForSelector(leaveButtonSelector, {
-      timeout: timeout,
-    });
+    console.log('Waiting for the ability to leave the meeting (when I\'m in the meeting...)', timeout, 'ms')
+    try {
+      await this.page.waitForSelector(leaveButtonSelector, {
+        timeout: timeout,
+      });
+    } catch (error) {
+      // Distinct error from regular timeout
+      throw new WaitingRoomTimeoutError();
+    }
+
+    // Log Done
     console.log("Successfully joined meeting");
+    this.joinedAt = new Date();
+  }
+
+
+  async startRecording() {
+
+    if (!this.page) throw new Error("Page not initialized");
+
+    // Get the stream
+    this.stream = await getStream(
+      this.page as any, //puppeteer type issue
+      { audio: true, video: true },
+    );
+
+
+    // Create a file
+    this.file = fs.createWriteStream(this.getRecordingPath());
+    this.stream.pipe(this.file);
+
+    // Pipe the stream to a file
+    console.log("Recording...");
+  }
+
+  async stopRecording() {
+    // Stop recording
+    if (this.stream) {
+      console.log("Stopping recording...");
+      this.stream.destroy();
+    }
+  }
+
+  async run() {
+
+    //Create a File to record to
+    this.file = fs.createWriteStream(this.getRecordingPath());
+
+    await this.launchBrowser();
+
+    // Start Join
+    await this.joinMeeting();
 
     // Click the people button
     console.log("Opening the participants list");
-    await page.locator('[aria-label="People"]').click();
+    await this.page.locator('[aria-label="People"]').click();
 
     // Wait for the attendees tree to appear
     console.log("Waiting for the attendees tree to appear");
-    const tree = await page.waitForSelector('[role="tree"]');
+    const tree = await this.page.waitForSelector('[role="tree"]');
     console.log("Attendees tree found");
 
     const updateParticipants = async () => {
       try {
-        const currentParticipants = await page.evaluate(() => {
+        const currentParticipants = await this.page.evaluate(() => {
           const participantsList = document.querySelector('[role="tree"]');
           if (!participantsList) {
             console.log("No participants list found");
@@ -172,38 +282,47 @@ export class TeamsBot extends Bot {
       this.settings.heartbeatInterval
     );
 
-    // Get the stream
-    const stream = await getStream(page, { audio: true, video: true });
+    await this.startRecording();
 
-    // Pipe the stream to a file
-    console.log("Recording...");
-    stream.pipe(file);
-
-    // Then wait for meeting to end by watching for the "Leave" button to disappear
-    await page.waitForFunction(
-      (selector) => !document.querySelector(selector),
-      { timeout: 0 }, // wait indefinitely
-      leaveButtonSelector
-    );
-    console.log("Meeting ended");
+    await Promise.race([
+      this.observeEverybodyLeft(),
+      this.observeMeetingEnded(),
+    ]);
 
     // Clear the participants checking interval
     clearInterval(this.participantsIntervalId);
 
-    // Stop recording
-    await stream.destroy();
-    file.close();
-    console.log("Recording finished");
+    await this.endLife();
+  }
 
-    // Upload recording to S3
-    console.log("Uploading recording to S3...");
-    const fileContent = await fs.promises.readFile(this.recordingPath);
-    const uuid = crypto.randomUUID();
-    const key = `recordings/${uuid}-teams-recording.webm`;
+  /**
+   * Clean Resources, close the browser.
+   * Ensure the filestream is closed as well.
+   */
+  async endLife() {
 
-    console.log("Closing browser");
-    // Close the browser
-    await browser.close();
-    (await wss).close();
+    // Close File if it exists
+    if (this.file) {
+      this.file.close();
+      this.file = null as any;
+    }
+
+    await this.page.click(leaveButtonSelector);
+
+    // Close Browser
+    if (this.browser) {
+      await this.browser.close();
+
+      // Close the websocket server
+      (await wss).close();
+    }
+
+    // Clear any intervals or timeouts to prevent open handles
+    if (this.participantsIntervalId) {
+      clearInterval(this.participantsIntervalId);
+    }
+
+    // Delete recording
+    await this.stopRecording();
   }
 }
