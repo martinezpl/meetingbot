@@ -25,6 +25,7 @@ export class ZoomBot extends Bot {
   page!: Page;
   file!: fs.WriteStream;
   stream!: Transform;
+  debugRecordingPath: string;
 
   constructor(
     botSettings: BotConfig,
@@ -34,6 +35,7 @@ export class ZoomBot extends Bot {
     this.recordingPath = path.resolve(__dirname, "recording.webm");
     this.contentType = "video/webm";
     this.url = `https://app.zoom.us/wc/${this.settings.meetingInfo.meetingId}/join?fromPWA=1&pwd=${this.settings.meetingInfo.meetingPassword}`;
+    this.debugRecordingPath = path.resolve(__dirname, "debug.webm");
   }
 
   getSpeakerTimeframes() {
@@ -109,6 +111,8 @@ export class ZoomBot extends Bot {
 
     // Launch
     await this.launchBrowser();
+
+    await this.startRecording(true);
 
     // Create a URL object from the url
     const page = this.page;
@@ -186,13 +190,14 @@ export class ZoomBot extends Bot {
 
       // Wait for the leave button to appear and be properly labeled before proceeding
       console.log("Leave button found and labeled, ready to start recording");
+      await this.stopRecording();
     }
   }
 
   /**
    * Start Recording the meeting.
    */
-  async startRecording() {
+  async startRecording(debug=false) {
     // Check if the page is initialized
     if (!this.page) throw new Error("Page not initialized");
 
@@ -200,7 +205,11 @@ export class ZoomBot extends Bot {
     this.stream = await getStream(this.page as any, { audio: true, video: true });
 
     // Create and Write the recording to a file, pipe the stream to a fileWriteStream
-    this.file = fs.createWriteStream(this.recordingPath);
+    if (debug) {
+      this.file = fs.createWriteStream(this.debugRecordingPath);
+    } else {
+      this.file = fs.createWriteStream(this.recordingPath);
+    }
     this.stream.pipe(this.file);
 
     console.log("Recording...");
