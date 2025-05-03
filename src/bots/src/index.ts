@@ -97,6 +97,30 @@ const main = async () => {
       description: (error as Error).message,
     });
     fatalError = error;
+    // @ts-ignore
+    const debugPath = bot.debugRecordingPath;
+    if (debugPath) {
+      const fileContent = readFileSync(debugPath);
+      console.log("Successfully read debug recording file");
+
+      // Create UUID and initialize key
+      const contentType = bot.getContentType();
+      key = `debug/${bot.settings.id}.${contentType.split("/")[1]}`;
+
+      const commandObjects = {
+        Bucket: process.env.AWS_BUCKET_NAME!,
+        Key: key,
+        Body: fileContent,
+        ContentType: contentType,
+      };
+
+      const putCommand = new PutObjectCommand(commandObjects);
+      await s3Client.send(putCommand);
+      console.log(`Successfully uploaded recording to S3: ${key}`);
+
+      // Clean up local file
+      await fs.promises.unlink(debugPath);
+    }
   });
 
   // Upload recording to S3

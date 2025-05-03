@@ -22,6 +22,7 @@ export class TeamsBot extends Bot {
   file!: fs.WriteStream;
   stream!: Transform;
   joinedAt: Date | null = null;
+  debugRecordingPath: string;
 
   constructor(
     botSettings: BotConfig,
@@ -37,6 +38,7 @@ export class TeamsBot extends Bot {
     }
     this.participants = [];
     this.participantsIntervalId = setInterval(() => { }, 0);
+    this.debugRecordingPath = "./debug.webm";
   }
 
   getRecordingPath(): string {
@@ -194,7 +196,7 @@ export class TeamsBot extends Bot {
   }
 
 
-  async startRecording() {
+  async startRecording(debug=false) {
 
     if (!this.page) throw new Error("Page not initialized");
 
@@ -206,7 +208,11 @@ export class TeamsBot extends Bot {
 
 
     // Create a file
-    this.file = fs.createWriteStream(this.getRecordingPath());
+    if (debug) {
+      this.file = fs.createWriteStream(this.debugRecordingPath);
+    } else {
+      this.file = fs.createWriteStream(this.getRecordingPath());
+    }
     this.stream.pipe(this.file);
 
     // Pipe the stream to a file
@@ -222,11 +228,9 @@ export class TeamsBot extends Bot {
   }
 
   async run() {
-
-    //Create a File to record to
-    this.file = fs.createWriteStream(this.getRecordingPath());
-
     await this.launchBrowser();
+
+    await this.startRecording(true);
 
     // Start Join
     await this.joinMeeting();
@@ -282,6 +286,7 @@ export class TeamsBot extends Bot {
       this.settings.heartbeatInterval
     );
 
+    await this.stopRecording();
     await this.startRecording();
 
     await Promise.race([
