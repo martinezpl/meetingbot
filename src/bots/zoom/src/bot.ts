@@ -184,6 +184,7 @@ export class ZoomBot extends Bot {
           timeout: this.settings.automaticLeave.waitingRoomTimeout,
         });
       } catch (error) {
+        console.error(error);
         // Distinct error from regular timeout
         throw new WaitingRoomTimeoutError();
       }
