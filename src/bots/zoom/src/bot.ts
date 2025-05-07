@@ -39,7 +39,7 @@ export class ZoomBot extends Bot {
   }
 
   getSpeakerTimeframes() {
-    return {};
+    return [];
   }
 
   async screenshot(fName: string = "screenshot.png") {

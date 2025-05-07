@@ -50,7 +50,7 @@ export class TeamsBot extends Bot {
   }
 
   getSpeakerTimeframes() {
-    return {};
+    return [];
   }
 
   async screenshot(fName: string = "screenshot.png") {
