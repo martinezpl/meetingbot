@@ -24,6 +24,9 @@ export class TeamsBot extends Bot {
   joinedAt: Date | null = null;
   debugRecordingPath: string;
 
+  private maxDuration: number = 1000 * 60 * 180;
+  private recordingStartedAt: number = 0;
+
   constructor(
     botSettings: BotConfig,
     onEvent: (eventType: EventCode, data?: any) => Promise<void>
@@ -75,9 +78,17 @@ export class TeamsBot extends Bot {
   async observeEverybodyLeft(): Promise<any> {
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      if (this.participants.length == 1 && this.joinedAt && Date.now() > this.joinedAt.getTime() + this.settings.automaticLeave.noOneJoinedTimeout) {
+      if (this.participants.length <= 1 && this.joinedAt && Date.now() > this.joinedAt.getTime() + this.settings.automaticLeave.noOneJoinedTimeout) {
         console.log("Everybody left, leaving the meeting");
         return;
+      }
+       // Check if the bot has been in the meeting for too long (maybe add a setting)
+       if (
+        this.recordingStartedAt &&
+        Date.now() - this.recordingStartedAt > this.maxDuration
+      ) {
+        console.log("Max Duration Reached");
+        break;
       }
     }
   }
@@ -231,6 +242,8 @@ export class TeamsBot extends Bot {
     await this.launchBrowser();
 
     await this.startRecording(true);
+
+    this.recordingStartedAt = Date.now();
 
     // Start Join
     await this.joinMeeting();
