@@ -76,6 +76,7 @@ export class ZoomBot extends Bot {
     this.browser = await launch({
       executablePath: puppeteer.executablePath(),
       headless: "new",
+      protocolTimeout: this.settings.automaticLeave.waitingRoomTimeout, // Add 60 second protocol timeout to prevent waitForSelector timeouts
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
