@@ -145,6 +145,8 @@ export class TeamsBot extends Bot {
       console.log("No 'Join meeting from this browser' button found");
     }
 
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
     try {
       // Wait for the "Continue without audio or video" button to appear
       await this.page.waitForSelector('#dialog-content-2 > div > button', { timeout: 5000 });
