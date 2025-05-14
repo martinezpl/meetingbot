@@ -4,6 +4,7 @@ import fs, { readFileSync } from "fs";
 import dotenv from "dotenv";
 import { startHeartbeat, reportEvent } from "./monitoring";
 import { EventCode, type BotConfig } from "./types";
+import { spawn } from "child_process";
 
 dotenv.config();
 
@@ -125,15 +126,31 @@ const main = async () => {
 
   // Upload recording to S3
   console.log("Start Upload to S3...");
-  const recordingPath = bot.getRecordingPath();
+  let recordingPath = bot.getRecordingPath();
+  let contentType = bot.getContentType();
   const speakerTimeframes = bot.getSpeakerTimeframes();
   console.log("Speaker Timeframes", speakerTimeframes);
   try {
+    if (contentType != "mp4") {
+      const ffmpegProcess = spawn("ffmpeg", ['-i', recordingPath, '-c:v', 'libx264', '-preset', 'fast', '-crf', '22', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-y', recordingPath.replace(/\.[^/.]+$/, ".mp4")]);
+      // wait for ffmpeg to finish
+      await new Promise((resolve, reject) => {
+        ffmpegProcess.on("close", (code) => {
+          if (code === 0) {
+            console.log("FFmpeg process completed successfully");
+            resolve(true);
+          } else {
+            console.error(`FFmpeg process exited with code ${code}`);
+            reject(new Error(`FFmpeg process exited with code ${code}`));
+          }
+        });
+      }
+      );
+      recordingPath = recordingPath.replace(/\.[^/.]+$/, ".mp4");
+      contentType = "video/mp4";
+    }
     const fileContent = readFileSync(recordingPath);
     console.log("Successfully read recording file");
-
-    // Create UUID and initialize key
-    const contentType = bot.getContentType();
     key = `recordings/${bot.settings.id}.${contentType.split("/")[1]}`;
 
     const commandObjects = {

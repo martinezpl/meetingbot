@@ -12,6 +12,10 @@ ENV \
 # Stay as root for all installation steps
 USER root
 
+RUN apt-get update && apt-get install -y \
+  ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
+
 # Install pnpm
 RUN npm install -g pnpm
 

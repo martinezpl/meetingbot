@@ -7,7 +7,7 @@ import path from "path";
 import { Transform } from "stream";
 
 const leaveButtonSelector =
-  'button[aria-label="Leave (Ctrl+Shift+H)"], button[aria-label="Leave (⌘+Shift+H)"], button[aria-label="Leave"]';
+  'button[aria-label="Leave (Ctrl+Shift+H)"], button[aria-label="Leave (⌘+Shift+H)"], button[aria-label="Leave"], button[title="Leave"]';
 
 const joinMeetingOnBrowser = 'button[aria-label="Join meeting from this browser"]'
 
@@ -78,7 +78,7 @@ export class TeamsBot extends Bot {
   async observeEverybodyLeft(): Promise<any> {
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      if (this.participants.length <= 1 && this.joinedAt && Date.now() > this.joinedAt.getTime() + this.settings.automaticLeave.noOneJoinedTimeout) {
+      if (this.participants.length <= 1 && this.joinedAt && Date.now() > this.joinedAt.getTime() + this.settings.automaticLeave.everyoneLeftTimeout) {
         console.log("Everybody left, leaving the meeting");
         return;
       }
@@ -145,6 +145,15 @@ export class TeamsBot extends Bot {
       console.log("No 'Join meeting from this browser' button found");
     }
 
+    try {
+      // Wait for the "Continue without audio or video" button to appear
+      await this.page.waitForSelector('#dialog-content-2 > div > button', { timeout: 5000 });
+      await this.page.click('#dialog-content-2 > div > button');
+      console.log('Clicked "Continue without audio or video" button');
+    } catch (error) {
+      console.log("No 'Continue without audio or video' button found");
+    }
+
     // Fill in the display name
     await this.page
       .locator(`[data-tid="prejoin-display-name-input"]`)
@@ -168,6 +177,17 @@ export class TeamsBot extends Bot {
       {},
       '[data-tid="prejoin-join-button"]'
     );
+
+    try {
+      await this.page.waitForSelector('button[title="Close"]', {
+        timeout: 2000,
+      });
+      await this.page.click('button[title="Close"]');
+      console.log("Closed permission popup");
+    } catch (error) {
+      // Distinct error from regular timeout
+      console.log("No permission popup")
+    }
 
     // Check if we're in a waiting room by checking if the join button exists and is disabled
     const joinButton = await this.page.$('[data-tid="prejoin-join-button"]');
@@ -198,6 +218,7 @@ export class TeamsBot extends Bot {
       });
     } catch (error) {
       // Distinct error from regular timeout
+      console.log("Error waiting for leave button:", error);
       throw new WaitingRoomTimeoutError();
     }
 
@@ -301,6 +322,11 @@ export class TeamsBot extends Bot {
 
     await this.stopRecording();
     await this.startRecording();
+
+    while (this.participants.length <= 1 && this.joinedAt && Date.now() < this.joinedAt.getTime() + this.settings.automaticLeave.noOneJoinedTimeout) {
+      console.log("Waiting for participants to join...");
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
 
     await Promise.race([
       this.observeEverybodyLeft(),

@@ -160,6 +160,7 @@ export class MeetsBot extends Bot {
   async joinMeeting() {
     console.log("Joining Call ...");
 
+    // @ts-ignore
     this.browser = await chromium.launch({
       headless: false,
       args: this.browserArgs,
