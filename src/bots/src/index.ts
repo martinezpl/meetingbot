@@ -131,7 +131,7 @@ const main = async () => {
   const speakerTimeframes = bot.getSpeakerTimeframes();
   console.log("Speaker Timeframes", speakerTimeframes);
   try {
-    if (contentType != "mp4") {
+    if (contentType != "video/mp4") {
       const ffmpegProcess = spawn("ffmpeg", ['-i', recordingPath, '-c:v', 'libx264', '-preset', 'fast', '-crf', '22', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-y', recordingPath.replace(/\.[^/.]+$/, ".mp4")]);
       // wait for ffmpeg to finish
       await new Promise((resolve, reject) => {
