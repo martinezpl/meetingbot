@@ -221,7 +221,7 @@ export class TeamsBot extends Bot {
     } catch (error) {
       // Distinct error from regular timeout
       console.log("Error waiting for leave button:", error);
-      throw new WaitingRoomTimeoutError();
+      throw new WaitingRoomTimeoutError('not admitted');
     }
 
     // Log Done

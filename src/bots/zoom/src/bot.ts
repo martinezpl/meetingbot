@@ -187,7 +187,7 @@ export class ZoomBot extends Bot {
       } catch (error) {
         console.error(error);
         // Distinct error from regular timeout
-        throw new WaitingRoomTimeoutError();
+        throw new WaitingRoomTimeoutError('not admitted');
       }
 
       // Wait for the leave button to appear and be properly labeled before proceeding
