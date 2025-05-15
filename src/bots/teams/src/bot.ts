@@ -330,6 +330,8 @@ export class TeamsBot extends Bot {
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
 
+    console.log("Participants joined:", this.participants);
+
     await Promise.race([
       this.observeEverybodyLeft(),
       this.observeMeetingEnded(),
@@ -346,7 +348,7 @@ export class TeamsBot extends Bot {
    * Ensure the filestream is closed as well.
    */
   async endLife() {
-
+    console.log("Ending bot life...");
     // Close File if it exists
     if (this.file) {
       this.file.close();
