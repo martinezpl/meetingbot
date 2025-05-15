@@ -139,7 +139,7 @@ const main = async () => {
 
   try {
     if (contentType != "video/mp4") {
-      const ffmpegProcess = spawn("ffmpeg", ['-i', recordingPath, '-c:v', 'libx264', '-preset', 'fast', '-crf', '22', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-y', recordingPath.replace(/\.[^/.]+$/, ".mp4")]);
+      const ffmpegProcess = spawn("ffmpeg", ['-i', recordingPath, '-c:v', 'libx264', "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "23", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", '-y', recordingPath.replace(/\.[^/.]+$/, ".mp4")]);
       // wait for ffmpeg to finish
       await new Promise((resolve, reject) => {
         ffmpegProcess.on("close", (code) => {
@@ -150,9 +150,15 @@ const main = async () => {
             console.error(`FFmpeg process exited with code ${code}`);
             reject(new Error(`FFmpeg process exited with code ${code}`));
           }
-        },);
-      }
-      );
+        }),
+        ffmpegProcess.on("exit", resolve);
+        ffmpegProcess.stdout.on("data", (data) => {
+          console.log(`ffmpeg: ${data}`);
+        });
+        ffmpegProcess.stderr.on("data", (data) => {
+          console.error(`ffmpeg err: ${data}`);
+        });
+      });
       recordingPath = recordingPath.replace(/\.[^/.]+$/, ".mp4");
       contentType = "video/mp4";
     }
