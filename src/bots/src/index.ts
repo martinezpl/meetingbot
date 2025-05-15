@@ -124,12 +124,19 @@ const main = async () => {
     }
   });
 
+
   // Upload recording to S3
   console.log("Start Upload to S3...");
   let recordingPath = bot.getRecordingPath();
   let contentType = bot.getContentType();
   const speakerTimeframes = bot.getSpeakerTimeframes();
   console.log("Speaker Timeframes", speakerTimeframes);
+
+  if (!fs.existsSync(recordingPath)) {
+    console.error("Recording file does not exist:", recordingPath);
+    process.exit(1);
+  }
+
   try {
     if (contentType != "video/mp4") {
       const ffmpegProcess = spawn("ffmpeg", ['-i', recordingPath, '-c:v', 'libx264', '-preset', 'fast', '-crf', '22', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-y', recordingPath.replace(/\.[^/.]+$/, ".mp4")]);
@@ -143,7 +150,7 @@ const main = async () => {
             console.error(`FFmpeg process exited with code ${code}`);
             reject(new Error(`FFmpeg process exited with code ${code}`));
           }
-        });
+        },);
       }
       );
       recordingPath = recordingPath.replace(/\.[^/.]+$/, ".mp4");
