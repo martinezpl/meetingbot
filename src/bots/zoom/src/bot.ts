@@ -245,8 +245,6 @@ export class ZoomBot extends Bot {
     // Start the recording -- again, type issue from importing.
     const stream = await this.startRecording();
 
-    console.log("Recording...");
-
     // Get the Frame containing the meeting
     const iframe = await this.page.waitForSelector(".pwa-webclient__iframe");
     const frame = await iframe?.contentFrame();

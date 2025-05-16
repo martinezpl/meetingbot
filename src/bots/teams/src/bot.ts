@@ -180,17 +180,6 @@ export class TeamsBot extends Bot {
       '[data-tid="prejoin-join-button"]'
     );
 
-    try {
-      await this.page.waitForSelector('button[title="Close"]', {
-        timeout: 2000,
-      });
-      await this.page.click('button[title="Close"]');
-      console.log("Closed permission popup");
-    } catch (error) {
-      // Distinct error from regular timeout
-      console.log("No permission popup")
-    }
-
     // Check if we're in a waiting room by checking if the join button exists and is disabled
     const joinButton = await this.page.$('[data-tid="prejoin-join-button"]');
     const isWaitingRoom =
@@ -222,6 +211,17 @@ export class TeamsBot extends Bot {
       // Distinct error from regular timeout
       console.log("Error waiting for leave button:", error);
       throw new WaitingRoomTimeoutError('not admitted');
+    }
+
+    try {
+      await this.page.waitForSelector('button[title="Close"]', {
+        timeout: 4000,
+      });
+      await this.page.click('button[title="Close"]');
+      console.log("Closed permission popup");
+    } catch (error) {
+      // Distinct error from regular timeout
+      console.log("No permission popup")
     }
 
     // Log Done
