@@ -139,7 +139,7 @@ const main = async () => {
 
   try {
     if (contentType != "video/mp4") {
-      const ffmpegProcess = spawn("ffmpeg", ['-i', recordingPath, '-c:v', 'libx264', "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", '-y', recordingPath.replace(/\.[^/.]+$/, ".mp4")]);
+      const ffmpegProcess = spawn("ffmpeg", ['-i', recordingPath, '-c:v', 'libx264', "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-vsync", "0", '-y', recordingPath.replace(/\.[^/.]+$/, ".mp4")]);
       // wait for ffmpeg to finish
       await new Promise((resolve, reject) => {
         ffmpegProcess.on("close", (code) => {
