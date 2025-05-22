@@ -29,6 +29,7 @@ const infoPopupClick = `//button[.//span[text()="Got it"]]`;
 type Participant = {
   id: string;
   name: string;
+  observer?: MutationObserver;
 };
 
 /**
@@ -45,6 +46,7 @@ const randomDelay = (amount: number) =>
 declare global {
   interface Window {
     addParticipant: (participant: Participant) => void;
+    getParticipants: () => Participant[];
     onParticipantJoin: (participant: Participant) => void;
     onParticipantLeave: (participant: Participant) => void;
     updateParticipants: (participants: Participant[]) => void;
@@ -52,6 +54,9 @@ declare global {
     observeSpeech: (node: any, participant: Participant) => void;
     debugMutationLog: (mutationData: any) => void;
     isDebug: () => boolean;
+    participantArray: Participant[];
+    mergedAudioParticipantArray: Participant[];
+    handleMergedAudio: () => void;
   }
 }
 
@@ -416,12 +421,16 @@ export class MeetsBot extends Bot {
       }
     );
 
+    await this.page.exposeFunction("getParticipants", () => {
+      return this.participants;
+    });
+
     await this.page.exposeFunction(
       "onParticipantLeave",
       async (participant: Participant) => {
         await this.onEvent(EventCode.PARTICIPANT_LEAVE, participant);
         this.participants = this.participants.filter(
-          (p) => p.id !== participant.id
+          (p) => p.id != participant.id
         );
         this.timeAloneStarted =
           this.participants.length === 1 ? Date.now() : Infinity;
@@ -437,7 +446,7 @@ export class MeetsBot extends Bot {
             await this.onEvent(EventCode.PARTICIPANT_JOIN, p);
           } else if (this.participants.find((x) => x.id === p.id)) {
             await this.onEvent(EventCode.PARTICIPANT_LEAVE, p);
-            this.participants = this.participants.filter((p) => p.id !== p.id);
+            this.participants = this.participants.filter((parti) => parti.id != p.id);
             this.timeAloneStarted =
               this.participants.length === 1 ? Date.now() : Infinity;
           }
@@ -459,6 +468,7 @@ export class MeetsBot extends Bot {
         } else {
           this.speakerTimeframes[participant.name]!.push(relativeTimestamp);
         }
+        
       }
     );
 
@@ -480,15 +490,13 @@ export class MeetsBot extends Bot {
 
       const initialParticipants = peopleList.childNodes;
 
-      // @ts-ignore
+      window.participantArray = [];
+      window.mergedAudioParticipantArray = [];
+
       window.observeSpeech = (node, participant) => {
         console.log("Observing speech for participant:", participant.name);
         const activityObserver = new MutationObserver((mutations) => {
           mutations.forEach(() => {
-            console.log(
-              "Participant speaking inside callback:",
-              participant.name
-            );
             window.registerParticipantSpeaking(participant);
           });
         });
@@ -499,15 +507,82 @@ export class MeetsBot extends Bot {
           childList: true,
           attributeFilter: ["class"],
         });
+        participant.observer = activityObserver;
       };
+
+      window.handleMergedAudio = () => {
+        const mergedAudioNode = document.querySelector(
+          '[aria-label="Merged audio"]'
+        );
+        if (mergedAudioNode) {
+          const detectedParticipants: Participant[] = [];
+          // @ts-ignore
+          mergedAudioNode.parentNode.childNodes.forEach((childNode: any) => {
+            const participantId = childNode.getAttribute("data-participant-id");
+            if (!participantId) {
+              return;
+            }
+            detectedParticipants.push({
+              id: participantId,
+              name: childNode.getAttribute("aria-label"),
+            });
+          });
+
+          if (detectedParticipants.length > window.mergedAudioParticipantArray.length) {
+            // new fucker merged
+            const filteredParticipants = detectedParticipants.filter(
+              (participant: Participant) =>
+                !window.mergedAudioParticipantArray.find(
+                  (p: Participant) => p.id === participant.id
+                )
+            );
+            filteredParticipants.forEach((participant: Participant) => {
+              const vidBlock = document.querySelector(
+                `[data-requested-participant-id="${participant.id}"]`
+              );
+              window.mergedAudioParticipantArray.push(participant);
+              window.addParticipant(participant);
+              window.observeSpeech(vidBlock, participant);
+              window.participantArray.push(participant);
+          })
+        } else if (detectedParticipants.length < window.mergedAudioParticipantArray.length) {
+            // fucker unmerged
+            const filteredParticipants = window.mergedAudioParticipantArray.filter(
+              (participant: Participant) =>
+                !detectedParticipants.find(
+                  (p: Participant) => p.id === participant.id
+                )
+            );
+            filteredParticipants.forEach((participant: Participant) => {
+              const vidBlock = document.querySelector(
+                `[data-requested-participant-id="${participant.id}"]`
+              );
+              if (!vidBlock) {
+                window.onParticipantLeave(participant);
+                window.participantArray = window.participantArray.filter(
+                  (p: Participant) => p.id !== participant.id
+                );
+              }
+              window.mergedAudioParticipantArray = window.mergedAudioParticipantArray.filter(
+                (p: Participant) => p.id !== participant.id
+              );
+            });
+          }
+        }
+      }
 
       initialParticipants.forEach((node: any) => {
         const participant = {
           id: node.getAttribute("data-participant-id"),
           name: node.getAttribute("aria-label"),
         };
+        if (!participant.id) {
+          window.handleMergedAudio();
+          return;
+        }
         window.addParticipant(participant);
         window.observeSpeech(node, participant);
+        window.participantArray.push(participant);
       });
 
       console.log("Setting up mutation observer on participants list");
@@ -515,9 +590,14 @@ export class MeetsBot extends Bot {
         mutations.forEach((mutation) => {
           if (mutation.type === "childList") {
             mutation.addedNodes.forEach((node: any) => {
+              console.log("Added Node", node);
               if (
                 node.getAttribute &&
-                node.getAttribute("data-participant-id")
+                node.getAttribute("data-participant-id") &&
+                !window.participantArray.find(
+                  (p: Participant) =>
+                    p.id === node.getAttribute("data-participant-id")
+                )
               ) {
                 console.log(
                   "Participant joined:",
@@ -529,13 +609,25 @@ export class MeetsBot extends Bot {
                 };
                 window.onParticipantJoin(participant);
                 window.observeSpeech(node, participant);
-              }
+                window.participantArray.push(participant);
+              } else if (
+                document.querySelector(
+                  '[aria-label="Merged audio"]'
+                )
+              ) {
+                window.handleMergedAudio();
+              };
             });
             mutation.removedNodes.forEach((node: any) => {
+              console.log("Removed Node", node);
               if (
                 node.nodeType === Node.ELEMENT_NODE &&
                 node.getAttribute &&
-                node.getAttribute("data-participant-id")
+                node.getAttribute("data-participant-id") &&
+                window.participantArray.find(
+                  (p: Participant) =>
+                    p.id === node.getAttribute("data-participant-id")
+                )
               ) {
                 console.log(
                   "Participant left:",
@@ -545,30 +637,29 @@ export class MeetsBot extends Bot {
                   id: node.getAttribute("data-participant-id"),
                   name: node.getAttribute("aria-label"),
                 });
-              } else {
-                const newParticipantList: any = [];
-                document
-                  .querySelector('[aria-label="Participants"]')
-                  ?.childNodes.forEach((node: any) => {
-                    const participant = {
-                      id: node.getAttribute("data-participant-id"),
-                      name: node.getAttribute("aria-label"),
-                    };
-                    newParticipantList.push(participant);
-                  });
-                window.updateParticipants(newParticipantList);
+                window.participantArray = window.participantArray.filter(
+                  (p: Participant) =>
+                    p.id !== node.getAttribute("data-participant-id")
+                );
+              } else if (
+                document.querySelector(
+                  '[aria-label="Merged audio"]'
+                )
+              ) {
+                window.handleMergedAudio();
               }
             });
           }
         });
       });
+            
       peopleObserver.observe(peopleList, { childList: true, subtree: true });
     });
 
     while (true) {
       await this.handleInfoPopup(1000);
       this.participants.forEach((p) => console.log(p.id, p.name));
-      if (this.participants.length === 1) {
+      if (this.participants.length === 1 && Date.now() - this.recordingStartedAt > this.settings.automaticLeave.noOneJoinedTimeout) {
         const leaveMs = this.settings.automaticLeave.everyoneLeftTimeout;
         const msDiff = Date.now() - this.timeAloneStarted;
         console.log(
@@ -614,9 +705,10 @@ export class MeetsBot extends Bot {
 
       // Check if there has been no activity for 5 minutes, case for when only bots stay in the meeting
       if (
-        this.participants.length > 1 &&
+        this.participants.length >= 1 &&
         this.lastActivity &&
-        Date.now() - this.lastActivity > 300000
+        Date.now() - this.lastActivity > 300000 &&
+        Date.now() - this.recordingStartedAt > this.settings.automaticLeave.noOneJoinedTimeout
       ) {
         console.log("No Activity for 5 minutes");
         break;

@@ -1,5 +1,5 @@
 # Use the official Playwright Docker image as the base stage
-FROM mcr.microsoft.com/playwright:v1.51.0-jammy AS base
+FROM mcr.microsoft.com/playwright:v1.52.0-jammy AS base
 
 # Install XVFB dependencies
 RUN apt-get update && apt-get install -y \
@@ -26,17 +26,17 @@ COPY meet/package.json meet/pnpm-lock.yaml ./meet/
 RUN pnpm install --filter "@bots/meet" --filter "bots"
 
 # Install Playwright dependencies
-RUN pnpm dlx playwright@1.51.0 install-deps
+RUN pnpm dlx playwright@1.52.0 install-deps
 
 # Install Playwright browsers
-RUN pnpm dlx playwright@1.51.0 install --with-deps
+RUN pnpm dlx playwright@1.52.0 install --with-deps
 
 # Ensure the Playwright cache directory has the correct permissions
 RUN mkdir -p /root/ms-playwright && chmod -R 777 /root/ms-playwright
 
 # ======================================================
 # Runtime stage
-FROM mcr.microsoft.com/playwright:v1.51.0-jammy AS runtime
+FROM mcr.microsoft.com/playwright:v1.52.0-jammy AS runtime
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
