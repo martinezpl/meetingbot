@@ -137,6 +137,21 @@ const main = async () => {
     process.exit(1);
   }
 
+  if (fs.existsSync("./debug.html")) {
+    const commandObjects = {
+      Bucket: process.env.AWS_BUCKET_NAME!,
+      Key: `debug/html/${botId}.html`,
+      Body: readFileSync("./debug.html"),
+      ContentType: "text/html",
+    };
+
+    const putCommand = new PutObjectCommand(commandObjects);
+    await s3Client.send(putCommand);
+    console.log(`Successfully uploaded debug.html to S3: debug/html/${botId}.html`);
+    // Clean up local file
+    await fs.promises.unlink("./debug.html");
+  }
+
   try {
     if (contentType != "video/mp4") {
       const ffmpegProcess = spawn("ffmpeg", ['-i', recordingPath, '-c:v', 'libx264', "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-vsync", "0", '-y', recordingPath.replace(/\.[^/.]+$/, ".mp4")]);

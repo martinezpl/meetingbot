@@ -78,7 +78,7 @@ export class TeamsBot extends Bot {
   async observeEverybodyLeft(): Promise<any> {
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      if (this.participants.length <= 1 && this.joinedAt && Date.now() > this.joinedAt.getTime() + this.settings.automaticLeave.everyoneLeftTimeout) {
+      if (this.participants.length <= 1 && this.joinedAt && Date.now() > this.joinedAt.getTime() + this.settings.automaticLeave.noOneJoinedTimeout) {
         console.log("Everybody left, leaving the meeting");
         return;
       }
@@ -282,11 +282,11 @@ export class TeamsBot extends Bot {
 
     const updateParticipants = async () => {
       try {
-        const currentParticipants = await this.page.evaluate(() => {
+        const evaluationResult = await this.page.evaluate(() => {
           const participantsList = document.querySelector('[role="tree"]');
           if (!participantsList) {
             console.log("No participants list found");
-            return [];
+            return {participants: [], 'dom': document.documentElement.outerHTML};
           }
 
           const currentElements = Array.from(
@@ -295,7 +295,7 @@ export class TeamsBot extends Bot {
             )
           );
 
-          return currentElements
+          const participants = currentElements
             .map((el) => {
               const nameSpan = el.querySelector("span[title]");
               return (
@@ -305,9 +305,20 @@ export class TeamsBot extends Bot {
               );
             })
             .filter((name) => name);
-        });
 
-        this.participants = currentParticipants;
+          return {participants, 'dom': document.documentElement.outerHTML};
+        });
+        
+        this.participants = evaluationResult.participants;
+        const debugHtml = evaluationResult.dom;
+        if (this.participants.length == 0) {
+          try {
+            fs.writeFileSync("./debug.html", debugHtml, 'utf-8');
+            console.log(`DOM HTML saved to debug.html`);
+          } catch (err) {
+            console.error('Error saving DOM HTML:', err);
+          }
+        }
       } catch (error) {
         console.log("Error getting participants:", error);
       }
