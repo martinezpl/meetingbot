@@ -326,22 +326,23 @@ export class TeamsBot extends Bot {
         });
         
         this.participants = evaluationResult.participants;
-        const debugHtml = evaluationResult.dom;
-        if (this.participants.length == 0) {
-          try {
-            fs.writeFileSync("./debug.html", debugHtml, 'utf-8');
-            console.log(`DOM HTML saved to debug.html`);
-          } catch (err) {
-            console.error('Error saving DOM HTML:', err);
-          }
-        }
+        return evaluationResult.dom;
       } catch (error) {
         console.log("Error getting participants:", error);
+        return "";
       }
     };
 
     // Get initial participants list
-    await updateParticipants();
+    const debugHtml = await updateParticipants();
+    if (this.participants.length == 0) {
+      try {
+        fs.writeFileSync("./debug.html", debugHtml, 'utf-8');
+        console.log(`DOM HTML saved to debug.html`);
+      } catch (err) {
+        console.error('Error saving DOM HTML:', err);
+      }
+    }
 
     // Then check for participants every heartbeatInterval milliseconds
     this.participantsIntervalId = setInterval(
