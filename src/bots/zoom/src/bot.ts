@@ -80,7 +80,7 @@ export class ZoomBot extends Bot {
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
-        "--use-fake-device-for-media-stream",
+        //"--use-fake-device-for-media-stream",
         // "--use-fake-ui-for-media-stream"
       ],
     }) as unknown as Browser; // It looks like theres a type issue with puppeteer.
@@ -157,16 +157,16 @@ export class ZoomBot extends Bot {
       }
 
       // Waits for mute button to be clickable and clicks it
-      await new Promise((resolve) => setTimeout(resolve, 700)); // TODO: remove this line later
+      await new Promise((resolve) => setTimeout(resolve, 5000));
       await frame.waitForSelector(muteButton);
       await frame.click(muteButton);
       console.log("Muted");
 
       // Waits for the stop video button to be clickable and clicks it
-      await new Promise((resolve) => setTimeout(resolve, 700)); // TODO: remove this line later
       await frame.waitForSelector(stopVideoButton);
       await frame.click(stopVideoButton);
       console.log("Stopped video");
+
 
       // Waits for the input field and types the name from the config
       await frame.waitForSelector("#input-for-name");
@@ -242,42 +242,31 @@ export class ZoomBot extends Bot {
     if (!this.page)
       throw new Error("Page is not initialized");
 
-    // Start the recording -- again, type issue from importing.
-    const stream = await this.startRecording();
+    await this.startRecording();
 
-    // Get the Frame containing the meeting
     const iframe = await this.page.waitForSelector(".pwa-webclient__iframe");
     const frame = await iframe?.contentFrame();
 
-    // Constantly check if the meeting has ended every second
+    // Constantly check if the meeting has ended
     const checkMeetingEnd = async () => {
+      while (true) {
+        const isLeaveButton = await frame?.$(leaveButton);
+        const endOk = await frame?.$("button.zm-btn.zm-btn-legacy.zm-btn--primary.zm-btn__outline--blue");
 
-      // TODO: Refactor this -- it won't work as expected.
-      // Check for the ok button with a short timeout, and then retry as intentned.
-      // Currently the bot will wait for the button to appear within 1 hour  (360k ms). 
-      // When it appears, then the bot will end the meeting regardless. (no need to check okButton)
-      // If the button does not appear within the hour, it throws TimeoutError, ending the meeting.
+        if (!isLeaveButton || endOk) {
+          console.log("Meeting ended");
 
-      // Wait for the "Ok" button to appear which indicates the meeting is over
-      const okButton = await frame?.waitForSelector(
-        "button.zm-btn.zm-btn-legacy.zm-btn--primary.zm-btn__outline--blue",
-        { timeout: 3600000 },
-      );
+          // Stop Recording
+          this.stopRecording();
 
-      if (okButton) {
-        console.log("Meeting ended");
+          // End Life -- Close file, browser, and websocket server
+          await this.endLife();
 
-        // Click the button to leave the meeting
-        await okButton.click();
+          break;
 
-        // Stop Recording
-        this.stopRecording();
-
-        // End Life -- Close file, browser, and websocket server
-        await this.endLife();
-
-      } else {
-        setTimeout(checkMeetingEnd, 1000); // Check every second
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
       }
     };
 
