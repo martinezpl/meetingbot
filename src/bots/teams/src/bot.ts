@@ -88,21 +88,37 @@ export class TeamsBot extends Bot {
         Date.now() - this.recordingStartedAt > this.maxDuration
       ) {
         console.log("Max Duration Reached");
-        break;
+        return;
       }
     }
   }
 
   async observeMeetingEnded(): Promise<any> {
-    return this.page.waitForFunction(
-      (selector) => !document.querySelector(selector),
-      { timeout: 0 }, // wait indefinitely
-      leaveButtonSelector
-    );
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      const leaveButton = await this.page.$(leaveButtonSelector);
+      if (!leaveButton) {
+        console.log("Meeting ended, leaving the meeting");
+        return;
+      }
+    }
+  }
+
+  async observeGotKickedOut(): Promise<any> {
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      const h1Elements = await this.page.$$("h1");
+      for (const elem of h1Elements) {
+        const textContent = await elem.evaluate((el) => el.textContent);
+        if (textContent?.trim() === "You've been removed from this meeting") {
+          console.log("Kicked out of the meeting");
+          return;
+        }
+      }
+    }
   }
 
   async launchBrowser() {
-
     // Launch the browser and open a new blank page
     this.browser = await launch({
       executablePath: puppeteer.executablePath(),
@@ -346,6 +362,7 @@ export class TeamsBot extends Bot {
     await Promise.race([
       this.observeEverybodyLeft(),
       this.observeMeetingEnded(),
+      this.observeGotKickedOut()
     ]);
 
     // Clear the participants checking interval
