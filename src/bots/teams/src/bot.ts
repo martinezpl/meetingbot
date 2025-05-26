@@ -384,7 +384,11 @@ export class TeamsBot extends Bot {
       this.file = null as any;
     }
 
-    await this.page.click(leaveButtonSelector);
+    try {
+      await this.page.click(leaveButtonSelector);
+    } catch (error) {
+      console.log("Error clicking leave button:", error);
+    }
 
     // Close Browser
     if (this.browser) {
