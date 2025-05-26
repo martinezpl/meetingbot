@@ -305,13 +305,29 @@ export class TeamsBot extends Bot {
             return {participants: [], 'dom': document.documentElement.outerHTML};
           }
 
-          const currentElements = Array.from(
+          let currentElements = Array.from(
             participantsList.querySelectorAll(
               '[data-tid^="participantsInCall-"]'
             )
           );
+          let participants = [];
 
-          const participants = currentElements
+          if (currentElements.length === 0) {
+            currentElements = Array.from(
+              participantsList.querySelectorAll(
+                '[data-cid="roster-participant"]'
+              )
+            );
+
+            participants = currentElements.map((el) => {
+              const name = el.getAttribute("data-tid")?.replace("attendeesInMeeting-", "");
+              return name || "";
+            })
+
+            return {participants, 'dom': document.documentElement.outerHTML};
+          }
+
+          participants = currentElements
             .map((el) => {
               const nameSpan = el.querySelector("span[title]");
               return (
