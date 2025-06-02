@@ -173,9 +173,14 @@ export class TeamsBot extends Bot {
     }
 
     // Fill in the display name
-    await this.page
-      .locator(`[data-tid="prejoin-display-name-input"]`)
-      .fill(this.settings.botDisplayName ?? "Meeting Bot");
+    const input = this.page.locator('[data-tid="prejoin-display-name-input"]');
+    await input.click(); // focus first
+
+    const name = this.settings.botDisplayName ?? "Meeting Bot";
+    for (const char of name) {
+      await this.page.keyboard.type(char, { delay: Math.floor(Math.random() * (300 - 100 + 1)) + 100 });
+    }
+
     console.log('Entered Display Name');
 
     // Mute microphone before joining
@@ -187,14 +192,18 @@ export class TeamsBot extends Bot {
     console.log('Found & Clicked the Join Button');
 
     // Wait until join button is disabled or disappears
-    await this.page.waitForFunction(
-      (selector) => {
-        const joinButton = document.querySelector(selector);
-        return !joinButton || joinButton.hasAttribute("disabled");
-      },
-      {},
-      '[data-tid="prejoin-join-button"]'
-    );
+    try {
+      await this.page.waitForFunction(
+        (selector) => {
+          const joinButton = document.querySelector(selector);
+          return !joinButton || joinButton.hasAttribute("disabled");
+        },
+        {},
+        '[data-tid="prejoin-join-button"]'
+      );
+    } catch (error) {
+      console.log("Error waiting for join button to be disabled:", error);
+    }
 
     // Check if we're in a waiting room by checking if the join button exists and is disabled
     const joinButton = await this.page.$('[data-tid="prejoin-join-button"]');
