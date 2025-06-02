@@ -589,35 +589,6 @@ export class MeetsBot extends Bot {
       const peopleObserver = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
           if (mutation.type === "childList") {
-            mutation.addedNodes.forEach((node: any) => {
-              console.log("Added Node", node);
-              if (
-                node.getAttribute &&
-                node.getAttribute("data-participant-id") &&
-                !window.participantArray.find(
-                  (p: Participant) =>
-                    p.id === node.getAttribute("data-participant-id")
-                )
-              ) {
-                console.log(
-                  "Participant joined:",
-                  node.getAttribute("aria-label")
-                );
-                const participant = {
-                  id: node.getAttribute("data-participant-id"),
-                  name: node.getAttribute("aria-label"),
-                };
-                window.onParticipantJoin(participant);
-                window.observeSpeech(node, participant);
-                window.participantArray.push(participant);
-              } else if (
-                document.querySelector(
-                  '[aria-label="Merged audio"]'
-                )
-              ) {
-                window.handleMergedAudio();
-              };
-            });
             mutation.removedNodes.forEach((node: any) => {
               console.log("Removed Node", node);
               if (
@@ -650,6 +621,35 @@ export class MeetsBot extends Bot {
               }
             });
           }
+          mutation.addedNodes.forEach((node: any) => {
+            console.log("Added Node", node);
+            if (
+              node.getAttribute &&
+              node.getAttribute("data-participant-id") &&
+              !window.participantArray.find(
+                (p: Participant) =>
+                  p.id === node.getAttribute("data-participant-id")
+              )
+            ) {
+              console.log(
+                "Participant joined:",
+                node.getAttribute("aria-label")
+              );
+              const participant = {
+                id: node.getAttribute("data-participant-id"),
+                name: node.getAttribute("aria-label"),
+              };
+              window.onParticipantJoin(participant);
+              window.observeSpeech(node, participant);
+              window.participantArray.push(participant);
+            } else if (
+              document.querySelector(
+                '[aria-label="Merged audio"]'
+              )
+            ) {
+              window.handleMergedAudio();
+            };
+          });
         });
       });
             
@@ -659,21 +659,21 @@ export class MeetsBot extends Bot {
     while (true) {
       await this.handleInfoPopup(1000);
       this.participants.forEach((p) => console.log(p.id, p.name));
-      if (this.participants.length === 1 && Date.now() - this.recordingStartedAt > this.settings.automaticLeave.noOneJoinedTimeout) {
-        const leaveMs = this.settings.automaticLeave.everyoneLeftTimeout;
-        const msDiff = Date.now() - this.timeAloneStarted;
-        console.log(
-          `Only me left in the meeting. Waiting for timeout time to have allocated (${
-            msDiff / 1000
-          } / ${leaveMs / 1000}s) ...`
-        );
-        if (msDiff > leaveMs) {
-          console.log(
-            "Only one participant remaining for timeout duration, leaving."
-          );
-          break;
-        }
-      }
+      // if (this.participants.length === 1 && Date.now() - this.recordingStartedAt > this.settings.automaticLeave.noOneJoinedTimeout) {
+      //   const leaveMs = this.settings.automaticLeave.everyoneLeftTimeout;
+      //   const msDiff = Date.now() - this.timeAloneStarted;
+      //   console.log(
+      //     `Only me left in the meeting. Waiting for timeout time to have allocated (${
+      //       msDiff / 1000
+      //     } / ${leaveMs / 1000}s) ...`
+      //   );
+      //   if (msDiff > leaveMs) {
+      //     console.log(
+      //       "Only one participant remaining for timeout duration, leaving."
+      //     );
+      //     break;
+      //   }
+      // }
 
       if (
         (await this.page
@@ -705,7 +705,6 @@ export class MeetsBot extends Bot {
 
       // Check if there has been no activity for 5 minutes, case for when only bots stay in the meeting
       if (
-        this.participants.length >= 1 &&
         this.lastActivity &&
         Date.now() - this.lastActivity > 300000 &&
         Date.now() - this.recordingStartedAt > this.settings.automaticLeave.noOneJoinedTimeout
