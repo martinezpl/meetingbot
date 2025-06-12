@@ -132,11 +132,6 @@ const main = async () => {
   const speakerTimeframes = bot.getSpeakerTimeframes();
   console.log("Speaker Timeframes", speakerTimeframes);
 
-  if (!fs.existsSync(recordingPath)) {
-    console.error("Recording file does not exist:", recordingPath);
-    process.exit(1);
-  }
-
   if (fs.existsSync("./debug.html")) {
     const commandObjects = {
       Bucket: process.env.AWS_BUCKET_NAME!,
@@ -150,6 +145,11 @@ const main = async () => {
     console.log(`Successfully uploaded debug.html to S3: debug/html/${botId}.html`);
     // Clean up local file
     await fs.promises.unlink("./debug.html");
+  }
+
+  if (!fs.existsSync(recordingPath)) {
+    console.error("Recording file does not exist:", recordingPath);
+    process.exit(1);
   }
 
   try {

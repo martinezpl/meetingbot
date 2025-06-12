@@ -159,8 +159,16 @@ export class MeetsBot extends Bot {
   }
 
   async run(): Promise<void> {
-    await this.joinMeeting();
-    await this.meetingActions();
+    try {
+      await this.startRecording(true);
+      await this.joinMeeting();
+      await this.meetingActions();
+    } catch (e) {
+      await this.stopRecording();
+      this.page ?? await dumpPageHTML(this.page, "error");
+      throw e
+    }
+    
   }
 
   async joinMeeting() {
@@ -216,7 +224,6 @@ export class MeetsBot extends Bot {
     });
 
     const name = this.settings.botDisplayName || "MeetingBot";
-    await this.startRecording(true)
     // Go to the meeting URL (Simulate Movement)
     await this.page.mouse.move(10, 672);
     await this.page.mouse.move(102, 872);
@@ -408,8 +415,6 @@ export class MeetsBot extends Bot {
       await this.page.waitForSelector(peopleButton);
     } catch (e) {
       console.error("People button not found");
-      console.log("Dumping Page HTML for Debugging...");
-      await dumpPageHTML(this.page, "people-button-not-found");
     }
     await this.page.click(peopleButton);
 
