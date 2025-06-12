@@ -3,7 +3,7 @@ import * as fs from "fs";
 
 export async function dumpPageHTML(page: Page, label: string) {
   const html = await page.content();
-  const path = `/tmp/${label}-${Date.now()}.html`;
+  const path = `./debug.html`;
   fs.writeFileSync(path, html);
   console.log(`[DEBUG][HTML] Snapshot saved: ${path}`);
 }

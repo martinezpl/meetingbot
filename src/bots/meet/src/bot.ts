@@ -68,6 +68,7 @@ export class MeetsBot extends Bot {
   kicked: boolean = false;
   recordingPath: string;
   debug: boolean;
+  debugRecordingPath: string = "./debug.mp4";
 
   private ffmpegProcess: ChildProcessWithoutNullStreams | null = null;
   private participants: Participant[] = [];
@@ -215,7 +216,7 @@ export class MeetsBot extends Bot {
     });
 
     const name = this.settings.botDisplayName || "MeetingBot";
-
+    await this.startRecording(true)
     // Go to the meeting URL (Simulate Movement)
     await this.page.mouse.move(10, 672);
     await this.page.mouse.move(102, 872);
@@ -269,7 +270,7 @@ export class MeetsBot extends Bot {
    *
    * If recording is already in progress, the method is a no-op.
    */
-  async startRecording(): Promise<void> {
+  async startRecording(debug = false): Promise<void> {
     if (this.ffmpegProcess) {
       console.warn("Recording already started.");
       return;
@@ -320,7 +321,7 @@ export class MeetsBot extends Bot {
       "-vf",
       "crop=1280:914:0:110",
       "-y",
-      this.getRecordingPath(),
+      debug ? this.debugRecordingPath : this.getRecordingPath(),
     ];
 
     this.ffmpegProcess = spawn("ffmpeg", ffmpegArgs);
@@ -403,12 +404,20 @@ export class MeetsBot extends Bot {
   async meetingActions() {
     await this.handleInfoPopup();
 
-    await this.page.waitForSelector(peopleButton);
+    try {
+      await this.page.waitForSelector(peopleButton);
+    } catch (e) {
+      console.error("People button not found");
+      console.log("Dumping Page HTML for Debugging...");
+      await dumpPageHTML(this.page, "people-button-not-found");
+    }
     await this.page.click(peopleButton);
 
     await this.page.waitForSelector('[aria-label="Participants"]', {
       state: "visible",
     });
+
+    await this.stopRecording();
 
     console.log("Starting Recording");
     await this.startRecording();
