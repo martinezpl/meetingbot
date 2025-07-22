@@ -165,10 +165,9 @@ export class MeetsBot extends Bot {
       await this.meetingActions();
     } catch (e) {
       await this.stopRecording();
-      this.page ?? await dumpPageHTML(this.page, "error");
-      throw e
+      this.page ?? (await dumpPageHTML(this.page, "error"));
+      throw e;
     }
-    
   }
 
   async joinMeeting() {
@@ -241,10 +240,16 @@ export class MeetsBot extends Bot {
     console.log("Filling the input field with the name...");
     await this.page.fill(enterNameField, name);
 
-    console.log('Waiting for either the "Join now" or "Ask to join" button to appear...');
+    console.log(
+      'Waiting for either the "Join now" or "Ask to join" button to appear...'
+    );
     const entryButton = await Promise.race([
-      this.page.waitForSelector(joinNowButton, { timeout: 60000 }).then(() => joinNowButton),
-      this.page.waitForSelector(askToJoinButton, { timeout: 60000 }).then(() => askToJoinButton),
+      this.page
+        .waitForSelector(joinNowButton, { timeout: 60000 })
+        .then(() => joinNowButton),
+      this.page
+        .waitForSelector(askToJoinButton, { timeout: 60000 })
+        .then(() => askToJoinButton),
     ]);
 
     await this.page.click(entryButton);
@@ -258,7 +263,7 @@ export class MeetsBot extends Bot {
       throw { message: "Bot was not admitted into the meeting." };
     }
 
-    if (this.debug) await dumpPageHTML(this.page, "joined");
+    await dumpPageHTML(this.page, "joined");
 
     console.log("Joined Call.");
     await this.onEvent(EventCode.JOINING_CALL);
@@ -412,11 +417,34 @@ export class MeetsBot extends Bot {
     await this.handleInfoPopup();
 
     try {
-      await this.page.waitForSelector(peopleButton);
-    } catch (e) {
-      console.error("People button not found");
+      // Check if the people icon exists and click its parent button
+      const hasPeopleIcon = await this.page.evaluate(() => {
+        const peopleButtonChild = Array.from(
+          document.querySelectorAll("i")
+        ).find((el) => el.textContent?.trim() === "people");
+        if (peopleButtonChild) {
+          const newPeopleButton = peopleButtonChild.closest("button");
+          if (newPeopleButton) {
+            newPeopleButton.click();
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (hasPeopleIcon) {
+        console.log("Using new People button selector.");
+      } else {
+        console.warn("People button not found, using fallback selector.");
+        await this.page.click(peopleButton);
+      }
+    } catch (error) {
+      console.warn(
+        "Error finding people button, using fallback selector.",
+        error
+      );
+      await this.page.click(peopleButton);
     }
-    await this.page.click(peopleButton);
 
     await this.page.waitForSelector('[aria-label="Participants"]', {
       state: "visible",
@@ -460,7 +488,9 @@ export class MeetsBot extends Bot {
             await this.onEvent(EventCode.PARTICIPANT_JOIN, p);
           } else if (this.participants.find((x) => x.id === p.id)) {
             await this.onEvent(EventCode.PARTICIPANT_LEAVE, p);
-            this.participants = this.participants.filter((parti) => parti.id != p.id);
+            this.participants = this.participants.filter(
+              (parti) => parti.id != p.id
+            );
             this.timeAloneStarted =
               this.participants.length === 1 ? Date.now() : Infinity;
           }
@@ -482,7 +512,6 @@ export class MeetsBot extends Bot {
         } else {
           this.speakerTimeframes[participant.name]!.push(relativeTimestamp);
         }
-        
       }
     );
 
@@ -542,7 +571,10 @@ export class MeetsBot extends Bot {
             });
           });
 
-          if (detectedParticipants.length > window.mergedAudioParticipantArray.length) {
+          if (
+            detectedParticipants.length >
+            window.mergedAudioParticipantArray.length
+          ) {
             // new fucker merged
             const filteredParticipants = detectedParticipants.filter(
               (participant: Participant) =>
@@ -558,15 +590,19 @@ export class MeetsBot extends Bot {
               window.addParticipant(participant);
               window.observeSpeech(vidBlock, participant);
               window.participantArray.push(participant);
-          })
-        } else if (detectedParticipants.length < window.mergedAudioParticipantArray.length) {
+            });
+          } else if (
+            detectedParticipants.length <
+            window.mergedAudioParticipantArray.length
+          ) {
             // fucker unmerged
-            const filteredParticipants = window.mergedAudioParticipantArray.filter(
-              (participant: Participant) =>
-                !detectedParticipants.find(
-                  (p: Participant) => p.id === participant.id
-                )
-            );
+            const filteredParticipants =
+              window.mergedAudioParticipantArray.filter(
+                (participant: Participant) =>
+                  !detectedParticipants.find(
+                    (p: Participant) => p.id === participant.id
+                  )
+              );
             filteredParticipants.forEach((participant: Participant) => {
               const vidBlock = document.querySelector(
                 `[data-requested-participant-id="${participant.id}"]`
@@ -577,13 +613,14 @@ export class MeetsBot extends Bot {
                   (p: Participant) => p.id !== participant.id
                 );
               }
-              window.mergedAudioParticipantArray = window.mergedAudioParticipantArray.filter(
-                (p: Participant) => p.id !== participant.id
-              );
+              window.mergedAudioParticipantArray =
+                window.mergedAudioParticipantArray.filter(
+                  (p: Participant) => p.id !== participant.id
+                );
             });
           }
         }
-      }
+      };
 
       initialParticipants.forEach((node: any) => {
         const participant = {
@@ -627,9 +664,7 @@ export class MeetsBot extends Bot {
                     p.id !== node.getAttribute("data-participant-id")
                 );
               } else if (
-                document.querySelector(
-                  '[aria-label="Merged audio"]'
-                )
+                document.querySelector('[aria-label="Merged audio"]')
               ) {
                 window.handleMergedAudio();
               }
@@ -656,17 +691,13 @@ export class MeetsBot extends Bot {
               window.onParticipantJoin(participant);
               window.observeSpeech(node, participant);
               window.participantArray.push(participant);
-            } else if (
-              document.querySelector(
-                '[aria-label="Merged audio"]'
-              )
-            ) {
+            } else if (document.querySelector('[aria-label="Merged audio"]')) {
               window.handleMergedAudio();
-            };
+            }
           });
         });
       });
-            
+
       peopleObserver.observe(peopleList, { childList: true, subtree: true });
     });
 
@@ -721,7 +752,8 @@ export class MeetsBot extends Bot {
       if (
         this.lastActivity &&
         Date.now() - this.lastActivity > 300000 &&
-        Date.now() - this.recordingStartedAt > this.settings.automaticLeave.noOneJoinedTimeout
+        Date.now() - this.recordingStartedAt >
+          this.settings.automaticLeave.noOneJoinedTimeout
       ) {
         console.log("No Activity for 5 minutes");
         break;
