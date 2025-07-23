@@ -183,10 +183,6 @@ export class TeamsBot extends Bot {
 
     console.log('Entered Display Name');
 
-    // Mute microphone before joining
-    await this.page.locator(`[data-tid="toggle-mute"]`).click();
-    console.log('Muted Microphone');
-
     // Join the meeting
     await this.page.locator(`[data-tid="prejoin-join-button"]`).click();
     console.log('Found & Clicked the Join Button');
