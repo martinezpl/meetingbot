@@ -23,6 +23,7 @@ const joinNowButton = '//button[.//span[text()="Join now"]]';
 const gotKickedDetector = '//button[.//span[text()="Return to home screen"]]';
 const leaveButton = `//button[@aria-label="Leave call"]`;
 const peopleButton = `//button[@aria-label="People"]`;
+const annotationsButton = `[aria-label="Turn on captions"]`
 
 const infoPopupClick = `//button[.//span[text()="Got it"]]`;
 
@@ -257,7 +258,7 @@ export class MeetsBot extends Bot {
     console.log("Awaiting Entry...");
     const timeout = this.settings.automaticLeave.waitingRoomTimeout;
     try {
-      await this.page.waitForSelector(leaveButton, { timeout });
+      await this.page.waitForSelector(annotationsButton, { timeout });
     } catch {
       // Timeout Error: Will get caught by bot/index.ts
       throw { message: "Bot was not admitted into the meeting." };
@@ -340,13 +341,13 @@ export class MeetsBot extends Bot {
     console.log("ffmpeg recording started.");
     this.recordingStartedAt = Date.now();
     // This may be too noisy
-    this.ffmpegProcess.stdout.on("data", (data) => {
-      console.log(`ffmpeg: ${data}`);
-    });
+    // this.ffmpegProcess.stdout.on("data", (data) => {
+    //   console.log(`ffmpeg: ${data}`);
+    // });
 
-    this.ffmpegProcess.stderr.on("data", (data) => {
-      console.error(`ffmpeg err: ${data}`);
-    });
+    // this.ffmpegProcess.stderr.on("data", (data) => {
+    //   console.error(`ffmpeg err: ${data}`);
+    // });
 
     this.ffmpegProcess.on("exit", (code) => {
       console.log(`ffmpeg process exited with code ${code}`);
