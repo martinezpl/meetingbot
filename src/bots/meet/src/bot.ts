@@ -23,7 +23,7 @@ const joinNowButton = '//button[.//span[text()="Join now"]]';
 const gotKickedDetector = '//button[.//span[text()="Return to home screen"]]';
 const leaveButton = `//button[@aria-label="Leave call"]`;
 const peopleButton = `//button[@aria-label="People"]`;
-const annotationsButton = `[aria-label="Turn on captions"]`
+const annotationsButton = `//button[@aria-label="Turn on captions"]`;
 
 const infoPopupClick = `//button[.//span[text()="Got it"]]`;
 
@@ -231,11 +231,14 @@ export class MeetsBot extends Bot {
     await this.page.waitForTimeout(300);
     await this.page.mouse.move(114, 100);
     await this.page.mouse.click(100, 100);
-    await this.page.goto(this.meetingURL, { waitUntil: "networkidle" });
+    await this.page.goto(this.meetingURL, {
+      waitUntil: "domcontentloaded",
+      timeout: 1000 * 60 * 3,
+    });
     await this.page.bringToFront();
 
     console.log("Waiting for the input field to be visible...");
-    await this.page.waitForSelector(enterNameField);
+    await this.page.waitForSelector(enterNameField, { timeout: 1000 * 60 * 3 });
     await this.page.waitForTimeout(randomDelay(1000));
 
     console.log("Filling the input field with the name...");
@@ -260,6 +263,7 @@ export class MeetsBot extends Bot {
     try {
       await this.page.waitForSelector(annotationsButton, { timeout });
     } catch {
+      console.log("Waiting Room Timeout Reached");
       // Timeout Error: Will get caught by bot/index.ts
       throw { message: "Bot was not admitted into the meeting." };
     }
@@ -341,13 +345,13 @@ export class MeetsBot extends Bot {
     console.log("ffmpeg recording started.");
     this.recordingStartedAt = Date.now();
     // This may be too noisy
-    // this.ffmpegProcess.stdout.on("data", (data) => {
-    //   console.log(`ffmpeg: ${data}`);
-    // });
+    this.ffmpegProcess.stdout.on("data", (data) => {
+      console.log(`ffmpeg: ${data}`);
+    });
 
-    // this.ffmpegProcess.stderr.on("data", (data) => {
-    //   console.error(`ffmpeg err: ${data}`);
-    // });
+    this.ffmpegProcess.stderr.on("data", (data) => {
+      console.error(`ffmpeg err: ${data}`);
+    });
 
     this.ffmpegProcess.on("exit", (code) => {
       console.log(`ffmpeg process exited with code ${code}`);
