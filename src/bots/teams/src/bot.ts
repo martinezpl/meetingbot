@@ -9,7 +9,8 @@ import { Transform } from "stream";
 const leaveButtonSelector =
   'button[aria-label="Leave (Ctrl+Shift+H)"], button[aria-label="Leave (⌘+Shift+H)"], button[aria-label="Leave"], button[title="Leave"]';
 
-const joinMeetingOnBrowser = 'button[aria-label="Join meeting from this browser"]'
+const joinMeetingOnBrowser =
+  'button[aria-label="Join meeting from this browser"]';
 
 export class TeamsBot extends Bot {
   recordingPath: string;
@@ -26,6 +27,7 @@ export class TeamsBot extends Bot {
 
   private maxDuration: number = 1000 * 60 * 180;
   private recordingStartedAt: number = 0;
+  private isShuttingDown: boolean = false;
 
   constructor(
     botSettings: BotConfig,
@@ -40,7 +42,7 @@ export class TeamsBot extends Bot {
       this.url = this.settings.meetingInfo.meetingUrl!;
     }
     this.participants = [];
-    this.participantsIntervalId = setInterval(() => { }, 0);
+    this.participantsIntervalId = setInterval(() => {}, 0);
     this.debugRecordingPath = "./debug.webm";
   }
 
@@ -71,23 +73,36 @@ export class TeamsBot extends Bot {
       fs.writeFileSync(screenshotPath, screenshot);
       console.log(`Screenshot saved to ${screenshotPath}`);
     } catch (e) {
-      console.log('Error taking screenshot:', e);
+      console.log("Error taking screenshot:", e);
     }
   }
 
   async observeEverybodyLeft(): Promise<any> {
     while (true) {
+      if (this.isShuttingDown) return;
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      if (this.participants.length <= 1 && this.joinedAt && Date.now() > this.joinedAt.getTime() + this.settings.automaticLeave.noOneJoinedTimeout) {
-        console.log("Everybody left, leaving the meeting");
-        return;
-      }
-       // Check if the bot has been in the meeting for too long (maybe add a setting)
-       if (
-        this.recordingStartedAt &&
-        Date.now() - this.recordingStartedAt > this.maxDuration
-      ) {
-        console.log("Max Duration Reached");
+      try {
+        if (
+          this.participants.length <= 1 &&
+          this.joinedAt &&
+          Date.now() >
+            this.joinedAt.getTime() +
+              this.settings.automaticLeave.noOneJoinedTimeout
+        ) {
+          console.log("Everybody left, leaving the meeting");
+          return;
+        }
+        // Check if the bot has been in the meeting for too long (maybe add a setting)
+        if (
+          this.recordingStartedAt &&
+          Date.now() - this.recordingStartedAt > this.maxDuration
+        ) {
+          console.log("Max Duration Reached");
+          return;
+        }
+      } catch (error: any) {
+        if (String(error?.message || error).includes("Target closed")) return;
+        console.log("observeEverybodyLeft error:", error);
         return;
       }
     }
@@ -95,10 +110,18 @@ export class TeamsBot extends Bot {
 
   async observeMeetingEnded(): Promise<any> {
     while (true) {
+      if (this.isShuttingDown) return;
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      const leaveButton = await this.page.$(leaveButtonSelector);
-      if (!leaveButton) {
-        console.log("Meeting ended, leaving the meeting");
+      try {
+        if (!this.page || (this.page as any).isClosed?.() === true) return;
+        const leaveButton = await this.page.$(leaveButtonSelector);
+        if (!leaveButton) {
+          console.log("Meeting ended, leaving the meeting");
+          return;
+        }
+      } catch (error: any) {
+        if (String(error?.message || error).includes("Target closed")) return;
+        console.log("observeMeetingEnded error:", error);
         return;
       }
     }
@@ -106,29 +129,35 @@ export class TeamsBot extends Bot {
 
   async observeGotKickedOut(): Promise<any> {
     while (true) {
+      if (this.isShuttingDown) return;
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      const h1Elements = await this.page.$$("h1");
-      for (const elem of h1Elements) {
-        const textContent = await elem.evaluate((el) => el.textContent);
-        if (textContent?.trim() === "You've been removed from this meeting") {
-          console.log("Kicked out of the meeting");
-          return;
+      try {
+        if (!this.page || (this.page as any).isClosed?.() === true) return;
+        const h1Elements = await this.page.$$("h1");
+        for (const elem of h1Elements) {
+          const textContent = await elem.evaluate((el) => el.textContent);
+          if (textContent?.trim() === "You've been removed from this meeting") {
+            console.log("Kicked out of the meeting");
+            return;
+          }
         }
+      } catch (error: any) {
+        if (String(error?.message || error).includes("Target closed")) return;
+        console.log("observeGotKickedOut error:", error);
+        return;
       }
     }
   }
 
   async launchBrowser() {
     // Launch the browser and open a new blank page
-    this.browser = await launch({
+    this.browser = (await launch({
       executablePath: puppeteer.executablePath(),
       headless: "new",
       // args: ["--use-fake-ui-for-media-stream"],
-      args: [
-        "--no-sandbox",
-      ],
+      args: ["--no-sandbox"],
       protocolTimeout: 0,
-    }) as unknown as Browser;
+    })) as unknown as Browser;
 
     // Parse the URL
     console.log("Parsing URL:", this.url);
@@ -141,9 +170,8 @@ export class TeamsBot extends Bot {
 
     // Open a new page
     this.page = await this.browser.newPage();
-    console.log('Opened Page');
+    console.log("Opened Page");
   }
-
 
   async joinMeeting() {
     // Navigate the page to a URL
@@ -156,8 +184,7 @@ export class TeamsBot extends Bot {
       await this.page.waitForSelector(joinMeetingOnBrowser, { timeout: 5000 });
       await this.page.click(joinMeetingOnBrowser);
       console.log("Clicked 'Join meeting from this browser' button");
-    }
-    catch (error) {
+    } catch (error) {
       console.log("No 'Join meeting from this browser' button found");
     }
 
@@ -165,8 +192,10 @@ export class TeamsBot extends Bot {
 
     try {
       // Wait for the "Continue without audio or video" button to appear
-      await this.page.waitForSelector('#dialog-content-2 > div > button', { timeout: 5000 });
-      await this.page.click('#dialog-content-2 > div > button');
+      await this.page.waitForSelector("#dialog-content-2 > div > button", {
+        timeout: 5000,
+      });
+      await this.page.click("#dialog-content-2 > div > button");
       console.log('Clicked "Continue without audio or video" button');
     } catch (error) {
       console.log("No 'Continue without audio or video' button found");
@@ -178,14 +207,16 @@ export class TeamsBot extends Bot {
 
     const name = this.settings.botDisplayName ?? "Meeting Bot";
     for (const char of name) {
-      await this.page.keyboard.type(char, { delay: Math.floor(Math.random() * (300 - 100 + 1)) + 100 });
+      await this.page.keyboard.type(char, {
+        delay: Math.floor(Math.random() * (300 - 100 + 1)) + 100,
+      });
     }
 
-    console.log('Entered Display Name');
+    console.log("Entered Display Name");
 
     // Join the meeting
     await this.page.locator(`[data-tid="prejoin-join-button"]`).click();
-    console.log('Found & Clicked the Join Button');
+    console.log("Found & Clicked the Join Button");
 
     // Wait until join button is disabled or disappears
     try {
@@ -210,11 +241,14 @@ export class TeamsBot extends Bot {
     let timeout = 30000; // if not in the waiting room, wait 30 seconds to join the meeting
     if (isWaitingRoom) {
       console.log(
-        `Joined waiting room, will wait for ${this.settings.automaticLeave.waitingRoomTimeout > 60 * 1000
-          ? `${this.settings.automaticLeave.waitingRoomTimeout / 60 / 1000
-          } minute(s)`
-          : `${this.settings.automaticLeave.waitingRoomTimeout / 1000
-          } second(s)`
+        `Joined waiting room, will wait for ${
+          this.settings.automaticLeave.waitingRoomTimeout > 60 * 1000
+            ? `${
+                this.settings.automaticLeave.waitingRoomTimeout / 60 / 1000
+              } minute(s)`
+            : `${
+                this.settings.automaticLeave.waitingRoomTimeout / 1000
+              } second(s)`
         }`
       );
 
@@ -223,7 +257,11 @@ export class TeamsBot extends Bot {
     }
 
     // wait for the leave button to appear (meaning we've joined the meeting)
-    console.log('Waiting for the ability to leave the meeting (when I\'m in the meeting...)', timeout, 'ms')
+    console.log(
+      "Waiting for the ability to leave the meeting (when I'm in the meeting...)",
+      timeout,
+      "ms"
+    );
     try {
       await this.page.waitForSelector(leaveButtonSelector, {
         timeout: timeout,
@@ -231,7 +269,7 @@ export class TeamsBot extends Bot {
     } catch (error) {
       // Distinct error from regular timeout
       console.log("Error waiting for leave button:", error);
-      throw new WaitingRoomTimeoutError('not admitted');
+      throw new WaitingRoomTimeoutError("not admitted");
     }
 
     try {
@@ -242,7 +280,7 @@ export class TeamsBot extends Bot {
       console.log("Closed permission popup");
     } catch (error) {
       // Distinct error from regular timeout
-      console.log("No permission popup")
+      console.log("No permission popup");
     }
 
     // Log Done
@@ -250,17 +288,14 @@ export class TeamsBot extends Bot {
     this.joinedAt = new Date();
   }
 
-
-  async startRecording(debug=false) {
-
+  async startRecording(debug = false) {
     if (!this.page) throw new Error("Page not initialized");
 
     // Get the stream
     this.stream = await getStream(
       this.page as any, //puppeteer type issue
-      { audio: true, video: true },
+      { audio: true, video: true }
     );
-
 
     // Create a file
     if (debug) {
@@ -303,11 +338,16 @@ export class TeamsBot extends Bot {
 
     const updateParticipants = async () => {
       try {
+        if (this.isShuttingDown) return "";
+        if (!this.page || (this.page as any).isClosed?.() === true) return "";
         const evaluationResult = await this.page.evaluate(() => {
           const participantsList = document.querySelector('[role="tree"]');
           if (!participantsList) {
             console.log("No participants list found");
-            return {participants: [], 'dom': document.documentElement.outerHTML};
+            return {
+              participants: [],
+              dom: document.documentElement.outerHTML,
+            };
           }
 
           let currentElements = Array.from(
@@ -325,11 +365,13 @@ export class TeamsBot extends Bot {
             );
 
             participants = currentElements.map((el) => {
-              const name = el.getAttribute("data-tid")?.replace("attendeesInMeeting-", "");
+              const name = el
+                .getAttribute("data-tid")
+                ?.replace("attendeesInMeeting-", "");
               return name || "";
-            })
+            });
 
-            return {participants, 'dom': document.documentElement.outerHTML};
+            return { participants, dom: document.documentElement.outerHTML };
           }
 
           participants = currentElements
@@ -343,12 +385,17 @@ export class TeamsBot extends Bot {
             })
             .filter((name) => name);
 
-          return {participants, 'dom': document.documentElement.outerHTML};
+          return { participants, dom: document.documentElement.outerHTML };
         });
-        
+
         this.participants = evaluationResult.participants;
         return evaluationResult.dom;
       } catch (error) {
+        if (
+          String((error as any)?.message || error).includes("Target closed")
+        ) {
+          return "";
+        }
         console.log("Error getting participants:", error);
         return "";
       }
@@ -358,10 +405,10 @@ export class TeamsBot extends Bot {
     const debugHtml = await updateParticipants();
     if (this.participants.length == 0) {
       try {
-        fs.writeFileSync("./debug.html", debugHtml, 'utf-8');
+        fs.writeFileSync("./debug.html", debugHtml, "utf-8");
         console.log(`DOM HTML saved to debug.html`);
       } catch (err) {
-        console.error('Error saving DOM HTML:', err);
+        console.error("Error saving DOM HTML:", err);
       }
     }
 
@@ -374,7 +421,13 @@ export class TeamsBot extends Bot {
     await this.stopRecording();
     await this.startRecording();
 
-    while (this.participants.length <= 1 && this.joinedAt && Date.now() < this.joinedAt.getTime() + this.settings.automaticLeave.noOneJoinedTimeout) {
+    while (
+      this.participants.length <= 1 &&
+      this.joinedAt &&
+      Date.now() <
+        this.joinedAt.getTime() +
+          this.settings.automaticLeave.noOneJoinedTimeout
+    ) {
       console.log("Waiting for participants to join...");
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
@@ -384,7 +437,7 @@ export class TeamsBot extends Bot {
     await Promise.race([
       this.observeEverybodyLeft(),
       this.observeMeetingEnded(),
-      this.observeGotKickedOut()
+      this.observeGotKickedOut(),
     ]);
 
     // Clear the participants checking interval
@@ -399,32 +452,54 @@ export class TeamsBot extends Bot {
    */
   async endLife() {
     console.log("Ending bot life...");
-    // Close File if it exists
-    if (this.file) {
-      this.file.close();
-      this.file = null as any;
-    }
-
-    try {
-      await this.page.click(leaveButtonSelector);
-    } catch (error) {
-      console.log("Error clicking leave button:", error);
-    }
-
-    // Close Browser
-    if (this.browser) {
-      await this.browser.close();
-
-      // Close the websocket server
-      (await wss).close();
-    }
+    this.isShuttingDown = true;
 
     // Clear any intervals or timeouts to prevent open handles
     if (this.participantsIntervalId) {
       clearInterval(this.participantsIntervalId);
     }
 
-    // Delete recording
-    await this.stopRecording();
+    // Stop recording before closing page/browser
+    try {
+      await this.stopRecording();
+    } catch (error) {
+      console.log("Error stopping recording:", error);
+    }
+
+    // Close File if it exists
+    try {
+      if (this.file) {
+        this.file.close();
+        this.file = null as any;
+      }
+    } catch (error) {
+      console.log("Error closing file stream:", error);
+    }
+
+    // Attempt to gracefully leave the meeting if page is still open
+    try {
+      if (this.page && (this.page as any).isClosed?.() !== true) {
+        await this.page.click(leaveButtonSelector);
+      }
+    } catch (error) {
+      // Ignore target closed during shutdown
+      console.log("Error clicking leave button:", error);
+    }
+
+    // Close Browser
+    try {
+      if (this.browser) {
+        await this.browser.close();
+      }
+    } catch (error) {
+      console.log("Error closing browser:", error);
+    }
+
+    // Close the websocket server
+    try {
+      (await wss).close();
+    } catch (error) {
+      console.log("Error closing websocket server:", error);
+    }
   }
 }
