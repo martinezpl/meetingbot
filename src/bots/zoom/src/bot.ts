@@ -5,12 +5,10 @@ import { BotConfig, EventCode, WaitingRoomTimeoutError } from "../../src/types";
 import { Bot } from "../../src/bot";
 import path from "path";
 
-
-
 // Constant Selectors
 const muteButton = 'button[aria-label="Mute"]';
 const stopVideoButton = 'button[aria-label="Stop Video"]';
-const joinButton = 'button.zm-btn.preview-join-button';
+const joinButton = "button.zm-btn.preview-join-button";
 const leaveButton = 'button[aria-label="Leave"]';
 const declineCookiesButton = 'button[id="onetrust-reject-all-handler"]';
 const iAgreeButton = 'button[id="wc_agree1"]';
@@ -57,23 +55,21 @@ export class ZoomBot extends Bot {
       fs.writeFileSync(screenshotPath, screenshot);
       console.log(`Screenshot saved to ${screenshotPath}`);
     } catch (e) {
-      console.log('Error taking screenshot:', e);
+      console.log("Error taking screenshot:", e);
     }
   }
 
   async checkKicked(): Promise<boolean> {
-
     //TODO: Implement this
     return false;
   }
 
   /** Launch browser
-   * 
+   *
    */
   async launchBrowser() {
-
     // Launch a browser and open the meeting
-    this.browser = await launch({
+    this.browser = (await launch({
       executablePath: puppeteer.executablePath(),
       headless: "new",
       protocolTimeout: this.settings.automaticLeave.waitingRoomTimeout, // Add 60 second protocol timeout to prevent waitForSelector timeouts
@@ -83,7 +79,7 @@ export class ZoomBot extends Bot {
         //"--use-fake-device-for-media-stream",
         // "--use-fake-ui-for-media-stream"
       ],
-    }) as unknown as Browser; // It looks like theres a type issue with puppeteer.
+    })) as unknown as Browser; // It looks like theres a type issue with puppeteer.
 
     console.log("Browser launched");
 
@@ -97,19 +93,17 @@ export class ZoomBot extends Bot {
     // This is to avoid the allow microphone and camera prompts
     context.clearPermissionOverrides();
     context.overridePermissions(urlObj.origin, ["camera", "microphone"]);
-    console.log('Turned off camera & mic permissions')
+    console.log("Turned off camera & mic permissions");
 
     // Opens a new page in the browser
     this.page = await this.browser.newPage();
   }
-
 
   /**
    * Opens a browser and navigatges, joins the meeting.
    * @returns {Promise<void>}
    */
   async joinMeeting() {
-
     // Launch
     await this.launchBrowser();
 
@@ -125,7 +119,7 @@ export class ZoomBot extends Bot {
     console.log("Page opened");
 
     // Waits for the page's iframe to load
-    console.log('Wating for iFrame to load')
+    console.log("Wating for iFrame to load");
     const iframe = await page.waitForSelector(".pwa-webclient__iframe");
     const frame = await iframe?.contentFrame();
     console.log("Opened iFrame");
@@ -139,8 +133,7 @@ export class ZoomBot extends Bot {
         await frame.waitForSelector(declineCookiesButton, { timeout: 5000 });
         await frame.click(declineCookiesButton);
         console.log("Declined cookies");
-      }
-      catch (error) {
+      } catch (error) {
         console.log("No cookies banner found");
       }
 
@@ -151,8 +144,7 @@ export class ZoomBot extends Bot {
         await frame.waitForSelector(iAgreeButton, { timeout: 5000 });
         await frame.click(iAgreeButton);
         console.log("Accepted privacy policy");
-      }
-      catch (error) {
+      } catch (error) {
         console.log("No privacy policy found");
       }
 
@@ -162,17 +154,14 @@ export class ZoomBot extends Bot {
       await frame.click(muteButton);
       console.log("Muted");
 
-      // Waits for the stop video button to be clickable and clicks it
-      await frame.waitForSelector(stopVideoButton);
-      await frame.click(stopVideoButton);
-      console.log("Stopped video");
-
-
       // Waits for the input field and types the name from the config
       await frame.waitForSelector("#input-for-name");
-      await frame.type("#input-for-name", this.settings?.botDisplayName ?? "Meeting Bot");
+      await frame.type(
+        "#input-for-name",
+        this.settings?.botDisplayName ?? "Meeting Bot"
+      );
       console.log("Typed name");
-      
+
       // Clicks the join button
       await frame.waitForSelector(joinButton);
       await frame.click(joinButton);
@@ -187,7 +176,7 @@ export class ZoomBot extends Bot {
       } catch (error) {
         console.error(error);
         // Distinct error from regular timeout
-        throw new WaitingRoomTimeoutError('not admitted');
+        throw new WaitingRoomTimeoutError("not admitted");
       }
 
       // Wait for the leave button to appear and be properly labeled before proceeding
@@ -199,12 +188,15 @@ export class ZoomBot extends Bot {
   /**
    * Start Recording the meeting.
    */
-  async startRecording(debug=false) {
+  async startRecording(debug = false) {
     // Check if the page is initialized
     if (!this.page) throw new Error("Page not initialized");
 
     // Create the Stream
-    this.stream = await getStream(this.page as any, { audio: true, video: true });
+    this.stream = await getStream(this.page as any, {
+      audio: true,
+      video: true,
+    });
 
     // Create and Write the recording to a file, pipe the stream to a fileWriteStream
     if (debug) {
@@ -215,32 +207,24 @@ export class ZoomBot extends Bot {
     this.stream.pipe(this.file);
 
     console.log("Recording...");
-
   }
 
   /**
    * Stop Recording the meeting.
    */
   async stopRecording() {
-
     // End the recording and close the file
-    if (this.stream)
-      this.stream.destroy();
-
+    if (this.stream) this.stream.destroy();
   }
 
-
   async run() {
-
     // Navigate and join the meeting.
     await this.joinMeeting();
 
     // Ensure browser exists
-    if (!this.browser)
-      throw new Error("Browser not initialized");
+    if (!this.browser) throw new Error("Browser not initialized");
 
-    if (!this.page)
-      throw new Error("Page is not initialized");
+    if (!this.page) throw new Error("Page is not initialized");
 
     await this.startRecording();
 
@@ -250,10 +234,11 @@ export class ZoomBot extends Bot {
     // Constantly check if the meeting has ended
     const checkMeetingEnd = async () => {
       while (true) {
-        const isLeaveButton = await frame?.$(leaveButton);
-        const endOk = await frame?.$("button.zm-btn.zm-btn-legacy.zm-btn--primary.zm-btn__outline--blue");
+        const endOk = await frame?.$(
+          "button.zm-btn.zm-btn-legacy.zm-btn--primary.zm-btn__outline--blue"
+        );
 
-        if (!isLeaveButton || endOk) {
+        if (endOk) {
           console.log("Meeting ended");
 
           // Stop Recording
@@ -263,7 +248,6 @@ export class ZoomBot extends Bot {
           await this.endLife();
 
           break;
-
         } else {
           await new Promise((resolve) => setTimeout(resolve, 5000));
         }
@@ -289,7 +273,6 @@ export class ZoomBot extends Bot {
    * Ensure the filestream is closed as well.
    */
   async endLife() {
-
     // Ensure Recording is stopped in unideal situations
     this.stopRecording();
 
