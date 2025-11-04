@@ -88,6 +88,12 @@ const main = async () => {
   // Run the bot
   await bot.run().catch(async (error) => {
     console.log("Error running bot:", error);
+    if (
+      error.message &&
+      error.message.includes("Attempted to use detached Frame")
+    ) {
+      return;
+    }
     if (error.message && error.message.includes("not admitted")) {
       await reportEvent(botId, EventCode.NOT_ADMITTED, {
         description: (error as Error).message,
