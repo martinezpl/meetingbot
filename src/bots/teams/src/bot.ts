@@ -512,14 +512,14 @@ export class TeamsBot extends Bot {
           voiceLevelElements.forEach((elem) => {
             const participantElement = elem.parentElement?.parentElement;
             if (!participantElement) return;
-            const participantName =
-              participantElement.getAttribute("data-tid") || "Unknown";
+            const participantName = (
+              participantElement.getAttribute("data-tid") || "Unknown"
+            ).replace("video-item-container-", "");
 
             const isSpeaking = elem.classList.contains("vdi-frame-occlusion");
 
             if (isSpeaking) {
               // Register that this participant is speaking
-              console.log(window.registerParticipantSpeaking);
               window.registerParticipantSpeaking({ name: participantName });
             }
           });
