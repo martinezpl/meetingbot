@@ -9,11 +9,28 @@ import path from "path";
 const muteButton = 'button[aria-label="Mute"]';
 const stopVideoButton = 'button[aria-label="Stop Video"]';
 const joinButton = "button.zm-btn.preview-join-button";
+const participantsButton =
+  "button.footer-button-base__button.ax-outline.footer-button__button";
 const leaveButton = 'button[aria-label="Leave"]';
 const declineCookiesButton = 'button[id="onetrust-reject-all-handler"]';
 const iAgreeButton = 'button[id="wc_agree1"]';
 import { Browser } from "puppeteer";
 import { Transform } from "stream";
+
+type Participant = {
+  id: string;
+  name: string;
+  watcherId?: NodeJS.Timeout; // actually a string in browser
+};
+
+declare global {
+  interface Window {
+    registerParticipantSpeaking: (participant: Participant) => void;
+    observeSpeech: (node: HTMLElement, participant: Participant) => void;
+    checkIfSpeaking: (node: HTMLElement, participant: Participant) => void;
+    participants: Participant[];
+  }
+}
 
 export class ZoomBot extends Bot {
   recordingPath: string;
@@ -24,6 +41,12 @@ export class ZoomBot extends Bot {
   file!: fs.WriteStream;
   stream!: Transform;
   debugRecordingPath: string;
+
+  private lastActivity: number | undefined = undefined;
+  private recordingStartedAt: number = 0;
+  private speakerTimeframes: {
+    [participantName: string]: [number];
+  } = {};
 
   constructor(
     botSettings: BotConfig,
@@ -36,8 +59,41 @@ export class ZoomBot extends Bot {
     this.debugRecordingPath = path.resolve(__dirname, "debug.webm");
   }
 
-  getSpeakerTimeframes() {
-    return [];
+  getSpeakerTimeframes(): {
+    speakerName: string;
+    start: number;
+    end: number;
+  }[] {
+    const processedTimeframes: {
+      speakerName: string;
+      start: number;
+      end: number;
+    }[] = [];
+
+    const threshold = 1000;
+    for (const [speakerName, timeframesArray] of Object.entries(
+      this.speakerTimeframes
+    )) {
+      let start = timeframesArray[0];
+      let end = timeframesArray[0];
+
+      for (let i = 1; i < timeframesArray.length; i++) {
+        const currentTimeframe = timeframesArray[i]!;
+        if (currentTimeframe - end < threshold) {
+          end = currentTimeframe;
+        } else {
+          if (end - start > 500) {
+            processedTimeframes.push({ speakerName, start, end });
+          }
+          start = currentTimeframe;
+          end = currentTimeframe;
+        }
+      }
+      processedTimeframes.push({ speakerName, start, end });
+    }
+    processedTimeframes.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    return processedTimeframes;
   }
 
   async screenshot(fName: string = "screenshot.png") {
@@ -97,6 +153,11 @@ export class ZoomBot extends Bot {
 
     // Opens a new page in the browser
     this.page = await this.browser.newPage();
+
+    await this.page.setViewport({
+      width: 1280, // Set desired width
+      height: 800, // Set desired height
+    });
   }
 
   /**
@@ -173,14 +234,14 @@ export class ZoomBot extends Bot {
         await frame.waitForSelector(leaveButton, {
           timeout: this.settings.automaticLeave.waitingRoomTimeout,
         });
+        // Wait for the leave button to appear and be properly labeled before proceeding
+        console.log("Leave button found and labeled, ready to start recording");
       } catch (error) {
         console.error(error);
         // Distinct error from regular timeout
         throw new WaitingRoomTimeoutError("not admitted");
       }
 
-      // Wait for the leave button to appear and be properly labeled before proceeding
-      console.log("Leave button found and labeled, ready to start recording");
       await this.stopRecording();
     }
   }
@@ -205,6 +266,7 @@ export class ZoomBot extends Bot {
       this.file = fs.createWriteStream(this.recordingPath);
     }
     this.stream.pipe(this.file);
+    this.recordingStartedAt = Date.now();
 
     console.log("Recording...");
   }
@@ -231,31 +293,193 @@ export class ZoomBot extends Bot {
     const iframe = await this.page.waitForSelector(".pwa-webclient__iframe");
     const frame = await iframe?.contentFrame();
 
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    try {
+      await frame?.click(
+        "button.zm-btn.zm-btn-legacy.zm-btn--primary.zm-btn__outline--blue"
+      );
+    } catch (e) {
+      // No dialog
+    }
+
+    await frame?.waitForSelector(participantsButton, {
+      timeout: this.settings.automaticLeave.waitingRoomTimeout,
+    });
+
+    try {
+      await frame?.click("button[aria-label='OK']");
+    } catch (e) {
+      // No dialog
+    }
+
+    await frame?.click(participantsButton);
+    await frame?.click(participantsButton);
+    console.log("Opened participants list");
+
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
     // Constantly check if the meeting has ended
     const checkMeetingEnd = async () => {
-      while (true) {
-        const endOk = await frame?.$(
+      let endOk = null;
+      let isParticipantsButtonThere = true;
+      if (frame) {
+        endOk = await frame?.$(
           "button.zm-btn.zm-btn-legacy.zm-btn--primary.zm-btn__outline--blue"
         );
-
         if (endOk) {
-          console.log("Meeting ended");
-
-          // Stop Recording
-          this.stopRecording();
-
-          // End Life -- Close file, browser, and websocket server
-          await this.endLife();
-
-          break;
-        } else {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          await endOk.click();
         }
+        isParticipantsButtonThere = !!(await frame?.$(participantsButton));
+      }
+
+      if (!frame || !isParticipantsButtonThere) {
+        console.log("Meeting ended");
+
+        // Stop Recording
+        this.stopRecording();
+
+        // End Life -- Close file, browser, and websocket server
+        await this.endLife();
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     };
 
-    // Start the meeting end check
-    await checkMeetingEnd();
+    await this.page.exposeFunction(
+      "registerParticipantSpeaking",
+      (participant: Participant) => {
+        this.lastActivity = Date.now();
+        const relativeTimestamp = Date.now() - this.recordingStartedAt;
+        console.log(
+          `Participant ${participant.name} is speaking at ${relativeTimestamp}ms`
+        );
+
+        if (!this.speakerTimeframes[participant.name]) {
+          this.speakerTimeframes[participant.name] = [relativeTimestamp];
+        } else {
+          this.speakerTimeframes[participant.name]!.push(relativeTimestamp);
+        }
+      }
+    );
+
+    await frame?.evaluate(() => {
+      window.participants = [];
+      let peopleList = document.querySelector(
+        ".ReactVirtualized__Grid__innerScrollContainer"
+      );
+      if (!peopleList) {
+        console.log("People list not found, attempting to open it");
+        const btn = document.querySelector(
+          ".footer-button-base__button.ax-outline.footer-button__button"
+        ) as HTMLElement;
+        if (btn) btn.click();
+        peopleList = document.querySelector(
+          ".ReactVirtualized__Grid__innerScrollContainer"
+        );
+        if (!peopleList) {
+          console.error("Could not find participants list element");
+          return;
+        }
+      }
+      const initialParticipants = peopleList.childNodes;
+
+      window.checkIfSpeaking = (node: any, participant: any) => {
+        const iconBoxDiv = node.querySelector(".participants-icon__icon-box");
+        if (!iconBoxDiv) {
+          console.error(
+            "Could not find icon box for participant:",
+            participant.name
+          );
+          return;
+        }
+        const present = !!iconBoxDiv.querySelector(
+          ".participants-icon__voip-speaking-icon"
+        );
+        if (present) {
+          window.registerParticipantSpeaking(participant);
+        }
+      };
+
+      window.observeSpeech = (node, participant) => {
+        console.log("Observing speech for participant:", participant.name);
+
+        window.checkIfSpeaking(node, participant);
+        const id = setInterval(window.checkIfSpeaking, 500, node, participant);
+        participant.watcherId = id;
+      };
+
+      initialParticipants.forEach((node: any) => {
+        const participantNode = node.querySelector(
+          ".item-pos.participants-li "
+        );
+        if (!participantNode) {
+          console.log("Participant node not found");
+          return;
+        }
+        const participant = {
+          id: participantNode.id,
+          name: participantNode.getAttribute("aria-label").split(",")[0],
+        };
+        window.participants.push(participant);
+        window.observeSpeech(node, participant);
+      });
+
+      const peopleObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node: any) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              if (node.classList.contains("participants-item-position")) {
+                const participantNode = node.querySelector(
+                  ".item-pos.participants-li "
+                );
+                if (!participantNode) {
+                  console.log("Participant node not found");
+                  return;
+                }
+                const participant = {
+                  id: participantNode.id,
+                  name: participantNode
+                    .getAttribute("aria-label")
+                    .split(",")[0],
+                };
+                window.participants.push(participant);
+                window.observeSpeech(participantNode, participant);
+              }
+            }
+          });
+          mutation.removedNodes.forEach((node: any) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const participantNode = node.querySelector(
+                ".item-pos.participants-li "
+              );
+              if (!participantNode) {
+                console.log("Participant node not found for removal");
+                return;
+              }
+              const removedParticipant = window.participants.find(
+                (p) => p.id === participantNode.id
+              );
+              if (!removedParticipant) {
+                console.log("Removed participant not found in tracking list");
+                return;
+              }
+              clearInterval(removedParticipant.watcherId);
+              window.participants = window.participants.filter(
+                (participant) => {
+                  return participant.id !== participantNode.id;
+                }
+              );
+            }
+          });
+        });
+      });
+
+      peopleObserver.observe(peopleList, { childList: true, subtree: true });
+    });
+
+    while (true) {
+      await checkMeetingEnd();
+    }
   }
 
   // Get the path to the recording file

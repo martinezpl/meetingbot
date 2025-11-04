@@ -87,7 +87,7 @@ const main = async () => {
   console.log("Starting bot...");
   // Run the bot
   await bot.run().catch(async (error) => {
-    console.error("Error running bot:", error);
+    console.log("Error running bot:", error);
     if (error.message && error.message.includes("not admitted")) {
       await reportEvent(botId, EventCode.NOT_ADMITTED, {
         description: (error as Error).message,
@@ -124,7 +124,6 @@ const main = async () => {
     }
   });
 
-
   // Upload recording to S3
   console.log("Start Upload to S3...");
   let recordingPath = bot.getRecordingPath();
@@ -142,7 +141,9 @@ const main = async () => {
 
     const putCommand = new PutObjectCommand(commandObjects);
     await s3Client.send(putCommand);
-    console.log(`Successfully uploaded debug.html to S3: debug/html/${botId}.html`);
+    console.log(
+      `Successfully uploaded debug.html to S3: debug/html/${botId}.html`
+    );
     // Clean up local file
     await fs.promises.unlink("./debug.html");
   }
@@ -154,7 +155,32 @@ const main = async () => {
 
   try {
     if (contentType != "video/mp4") {
-      const ffmpegProcess = spawn("ffmpeg", ['-i', recordingPath, '-c:v', 'libx264', "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-vsync", "0", '-y', recordingPath.replace(/\.[^/.]+$/, ".mp4")]);
+      const ffmpegProcess = spawn("ffmpeg", [
+        "-i",
+        recordingPath,
+        "-c:v",
+        "libx264",
+        "-vf",
+        "scale=iw:ih:flags=lanczos,format=yuv420p",
+        "-preset",
+        "fast",
+        "-tune",
+        "animation",
+        "-x264-params",
+        "aq-mode=2:aq-strength=1.2:deblock=0,0",
+        "-crf",
+        "18",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        "-movflags",
+        "+faststart",
+        "-vsync",
+        "0",
+        "-y",
+        recordingPath.replace(/\.[^/.]+$/, ".mp4"),
+      ]);
       // wait for ffmpeg to finish
       await new Promise((resolve, reject) => {
         ffmpegProcess.on("close", (code) => {
@@ -166,7 +192,7 @@ const main = async () => {
             reject(new Error(`FFmpeg process exited with code ${code}`));
           }
         }),
-        ffmpegProcess.on("exit", resolve);
+          ffmpegProcess.on("exit", resolve);
         ffmpegProcess.stdout.on("data", (data) => {
           console.log(`ffmpeg: ${data}`);
         });

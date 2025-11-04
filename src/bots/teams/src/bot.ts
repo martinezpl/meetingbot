@@ -6,11 +6,30 @@ import { Bot } from "../../src/bot";
 import path from "path";
 import { Transform } from "stream";
 
+/*
+every 0.5s
+1. select all elements with data-tid=voice-level-stream-outline
+2. for each element, check parent of the parent
+3. data-tid contains participant name
+4. if the stream outline class contains "vdi-frame-occlusion" then participant is speaking, otherwise not speaking
+*/
+
 const leaveButtonSelector =
   'button[aria-label="Leave (Ctrl+Shift+H)"], button[aria-label="Leave (⌘+Shift+H)"], button[aria-label="Leave"], button[title="Leave"]';
 
 const joinMeetingOnBrowser =
   'button[aria-label="Join meeting from this browser"]';
+
+type Participant = {
+  name: string;
+  watcherId?: NodeJS.Timeout; // actually a string in browser
+};
+
+declare global {
+  interface Window {
+    registerParticipantSpeaking: (participant: Participant) => void;
+  }
+}
 
 export class TeamsBot extends Bot {
   recordingPath: string;
@@ -28,6 +47,10 @@ export class TeamsBot extends Bot {
   private maxDuration: number = 1000 * 60 * 180;
   private recordingStartedAt: number = 0;
   private isShuttingDown: boolean = false;
+  private speakerTimeframes: {
+    [participantName: string]: [number];
+  } = {};
+  private lastActivity: number | undefined = undefined;
 
   constructor(
     botSettings: BotConfig,
@@ -54,8 +77,41 @@ export class TeamsBot extends Bot {
     return this.contentType;
   }
 
-  getSpeakerTimeframes() {
-    return [];
+  getSpeakerTimeframes(): {
+    speakerName: string;
+    start: number;
+    end: number;
+  }[] {
+    const processedTimeframes: {
+      speakerName: string;
+      start: number;
+      end: number;
+    }[] = [];
+
+    const threshold = 1000;
+    for (const [speakerName, timeframesArray] of Object.entries(
+      this.speakerTimeframes
+    )) {
+      let start = timeframesArray[0];
+      let end = timeframesArray[0];
+
+      for (let i = 1; i < timeframesArray.length; i++) {
+        const currentTimeframe = timeframesArray[i]!;
+        if (currentTimeframe - end < threshold) {
+          end = currentTimeframe;
+        } else {
+          if (end - start > 500) {
+            processedTimeframes.push({ speakerName, start, end });
+          }
+          start = currentTimeframe;
+          end = currentTimeframe;
+        }
+      }
+      processedTimeframes.push({ speakerName, start, end });
+    }
+    processedTimeframes.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    return processedTimeframes;
   }
 
   async screenshot(fName: string = "screenshot.png") {
@@ -153,7 +209,7 @@ export class TeamsBot extends Bot {
     // Launch the browser and open a new blank page
     this.browser = (await launch({
       executablePath: puppeteer.executablePath(),
-      headless: "new",
+      headless: false,
       // args: ["--use-fake-ui-for-media-stream"],
       args: ["--no-sandbox"],
       protocolTimeout: 0,
@@ -171,6 +227,10 @@ export class TeamsBot extends Bot {
     // Open a new page
     this.page = await this.browser.newPage();
     console.log("Opened Page");
+    await this.page.setViewport({
+      width: 1500, // Set desired width
+      height: 950, // Set desired height
+    });
   }
 
   async joinMeeting() {
@@ -320,6 +380,27 @@ export class TeamsBot extends Bot {
   async run() {
     await this.launchBrowser();
 
+    await this.page.exposeFunction(
+      "registerParticipantSpeaking",
+      (participant: Participant) => {
+        this.lastActivity = Date.now();
+        const relativeTimestamp = Date.now() - this.recordingStartedAt;
+        if (!participant.name) {
+          console.log("Unnamed participant!");
+          return;
+        }
+        console.log(
+          `Participant ${participant.name} is speaking at ${relativeTimestamp}ms`
+        );
+
+        if (!this.speakerTimeframes[participant.name]) {
+          this.speakerTimeframes[participant.name] = [relativeTimestamp];
+        } else {
+          this.speakerTimeframes[participant.name]!.push(relativeTimestamp);
+        }
+      }
+    );
+
     await this.startRecording(true);
 
     this.recordingStartedAt = Date.now();
@@ -389,6 +470,7 @@ export class TeamsBot extends Bot {
         });
 
         this.participants = evaluationResult.participants;
+
         return evaluationResult.dom;
       } catch (error) {
         if (
@@ -418,6 +500,38 @@ export class TeamsBot extends Bot {
       this.settings.heartbeatInterval
     );
 
+    const checkSpeech = () => {
+      if (this.isShuttingDown) return;
+      this.page
+        .evaluate(() => {
+          // Find all voice level elements
+          const voiceLevelElements = Array.from(
+            document.querySelectorAll('[data-tid="voice-level-stream-outline"]')
+          );
+
+          voiceLevelElements.forEach((elem) => {
+            const participantElement = elem.parentElement?.parentElement;
+            if (!participantElement) return;
+            const participantName =
+              participantElement.getAttribute("data-tid") || "Unknown";
+
+            const isSpeaking = elem.classList.contains("vdi-frame-occlusion");
+
+            if (isSpeaking) {
+              // Register that this participant is speaking
+              console.log(window.registerParticipantSpeaking);
+              window.registerParticipantSpeaking({ name: participantName });
+            }
+          });
+        })
+        .catch((error) => {
+          if (String(error?.message || error).includes("Target closed")) return;
+          console.log("Error checking speech:", error);
+        });
+    };
+
+    const speechCheckerId = setInterval(checkSpeech, 500);
+
     await this.stopRecording();
     await this.startRecording();
 
@@ -442,6 +556,7 @@ export class TeamsBot extends Bot {
 
     // Clear the participants checking interval
     clearInterval(this.participantsIntervalId);
+    clearInterval(speechCheckerId);
 
     await this.endLife();
   }
