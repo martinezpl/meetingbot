@@ -209,7 +209,7 @@ export class TeamsBot extends Bot {
     // Launch the browser and open a new blank page
     this.browser = (await launch({
       executablePath: puppeteer.executablePath(),
-      headless: false,
+      headless: "new",
       // args: ["--use-fake-ui-for-media-stream"],
       args: ["--no-sandbox"],
       protocolTimeout: 0,
