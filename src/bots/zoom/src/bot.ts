@@ -307,9 +307,15 @@ export class ZoomBot extends Bot {
       // No dialog
     }
 
-    await frame?.waitForSelector(participantsButton, {
-      timeout: this.settings.automaticLeave.waitingRoomTimeout,
-    });
+    try {
+      await frame?.waitForSelector(participantsButton, {
+        timeout: this.settings.automaticLeave.waitingRoomTimeout,
+      });
+    } catch (error) {
+      console.error(error);
+      // Distinct error from regular timeout
+      throw new WaitingRoomTimeoutError("not admitted");
+    }
 
     try {
       await frame?.click("button[aria-label='OK']");
