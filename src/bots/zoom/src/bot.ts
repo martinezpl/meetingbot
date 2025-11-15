@@ -394,13 +394,26 @@ export class ZoomBot extends Bot {
         }
       }
 
-      if (!frame || !isParticipantsButtonThere) {
-        console.log("Meeting ended");
+      const inactivityTime = this.lastActivity
+        ? Date.now() - this.lastActivity
+        : Infinity;
 
-        // Stop Recording
+      const timeInMeeting = Date.now() - this.recordingStartedAt;
+
+      const isDeadSilence =
+        inactivityTime > this.settings.automaticLeave.everyoneLeftTimeout;
+
+      const isTimeToFuckOff =
+        timeInMeeting > this.settings.automaticLeave.noOneJoinedTimeout &&
+        isDeadSilence;
+
+      const hasMeetingEnded = !frame || !isParticipantsButtonThere;
+
+      if (hasMeetingEnded || isTimeToFuckOff) {
+        console.log(hasMeetingEnded ? "Meeting ended" : "Time to fuck off");
+
         this.stopRecording();
 
-        // End Life -- Close file, browser, and websocket server
         await this.endLife();
       } else {
         await new Promise((resolve) => setTimeout(resolve, 650));
