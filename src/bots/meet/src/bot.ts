@@ -421,33 +421,38 @@ export class MeetsBot extends Bot {
   async meetingActions() {
     await this.handleInfoPopup();
 
-    try {
-      // Check if the people icon exists and click its parent button
-      const hasPeopleIcon = await this.page.evaluate(() => {
-        const peopleButtonChild = Array.from(
-          document.querySelectorAll("i")
-        ).find((el) => el.textContent?.trim() === "people");
-        if (peopleButtonChild) {
-          const newPeopleButton = peopleButtonChild.closest("button");
-          if (newPeopleButton) {
-            newPeopleButton.click();
-            return true;
-          }
-        }
-        return false;
-      });
-
-      if (hasPeopleIcon) {
-        console.log("Using new People button selector.");
-      } else {
-        console.warn("People button not found, using fallback selector.");
-        await this.page.click(peopleButton);
-      }
-    } catch (error) {
-      console.warn(
-        "Error finding people button, using fallback selector.",
-        error
+    // Check if the people icon exists and click its parent button
+    const hasNewPeopleIcon = await this.page.evaluate(() => {
+      const peopleButton = Array.from(document.querySelectorAll("button")).find(
+        (el) => el.ariaLabel?.includes("People")
       );
+      if (peopleButton) {
+        peopleButton.click();
+        return true;
+      }
+      return false;
+    });
+
+    const hasOldPeopleIcon = await this.page.evaluate(() => {
+      const peopleButtonChild = Array.from(document.querySelectorAll("i")).find(
+        (el) => el.textContent?.trim() === "people"
+      );
+      if (peopleButtonChild) {
+        const newPeopleButton = peopleButtonChild.closest("button");
+        if (newPeopleButton) {
+          newPeopleButton.click();
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (hasNewPeopleIcon) {
+      console.log("Using new People button selector.");
+    } else if (hasOldPeopleIcon) {
+      console.log("Using old People button selector.");
+    } else {
+      console.warn("People button not found, using fallback selector.");
       await this.page.click(peopleButton);
     }
 
