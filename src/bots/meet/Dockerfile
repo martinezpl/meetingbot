@@ -41,6 +41,8 @@ FROM mcr.microsoft.com/playwright:v1.52.0-jammy AS runtime
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
   pulseaudio \
+  x11-utils \
+  x11-apps \
   && rm -rf /var/lib/apt/lists/*
 
 # Install pnpm globally

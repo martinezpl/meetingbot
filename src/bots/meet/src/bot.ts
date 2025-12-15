@@ -166,7 +166,9 @@ export class MeetsBot extends Bot {
       await this.meetingActions();
     } catch (e) {
       await this.stopRecording();
-      this.page ?? (await dumpPageHTML(this.page, "error"));
+      try {
+        this.page ?? (await dumpPageHTML(this.page, "error"));
+      } catch {}
       throw e;
     }
   }
