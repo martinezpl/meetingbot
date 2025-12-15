@@ -47,7 +47,7 @@ const randomDelay = (amount: number) =>
 declare global {
   interface Window {
     addParticipant: (participant: Participant) => void;
-    getParticipants: () => Participant[];
+    getParticipants: () => Promise<Participant[]>;
     onParticipantJoin: (participant: Participant) => void;
     onParticipantLeave: (participant: Participant) => void;
     updateParticipants: (participants: Participant[]) => void;
@@ -58,6 +58,7 @@ declare global {
     participantArray: Participant[];
     mergedAudioParticipantArray: Participant[];
     handleMergedAudio: () => void;
+    checkParticipants: () => Promise<void>;
   }
 }
 
@@ -167,7 +168,7 @@ export class MeetsBot extends Bot {
     } catch (e) {
       await this.stopRecording();
       try {
-        this.page ?? (await dumpPageHTML(this.page, "error"));
+        this.page ?? (await dumpPageHTML(this.page, ""));
       } catch {}
       throw e;
     }
@@ -270,7 +271,7 @@ export class MeetsBot extends Bot {
       throw { message: "Bot was not admitted into the meeting." };
     }
 
-    await dumpPageHTML(this.page, "joined");
+    await dumpPageHTML(this.page, "");
 
     console.log("Joined Call.");
     await this.onEvent(EventCode.JOINING_CALL);
@@ -413,16 +414,19 @@ export class MeetsBot extends Bot {
   async handleInfoPopup(timeout = 5000) {
     try {
       await this.page.waitForSelector(infoPopupClick, { timeout });
-    } catch (e) {
-      return;
-    }
-    console.log("Clicking the popup...");
-    await this.page.click(infoPopupClick);
+      console.log("Clicking the popup...");
+      await this.page.click(infoPopupClick);
+    } catch (e) {}
+    try {
+      await this.page.click(`//button[@aria-label="Close"]`, {
+        timeout,
+      });
+    } catch (e) {}
   }
 
   async meetingActions() {
+    let squareListenerMode = false;
     await this.handleInfoPopup();
-
     // Check if the people icon exists and click its parent button
     const hasNewPeopleIcon = await this.page.evaluate(() => {
       const peopleButton = Array.from(document.querySelectorAll("button")).find(
@@ -454,13 +458,15 @@ export class MeetsBot extends Bot {
     } else if (hasOldPeopleIcon) {
       console.log("Using old People button selector.");
     } else {
-      console.warn("People button not found, using fallback selector.");
-      await this.page.click(peopleButton);
+      console.warn("People button not found, square listener mode.");
+      squareListenerMode = true;
     }
 
-    await this.page.waitForSelector('[aria-label="Participants"]', {
-      state: "visible",
-    });
+    if (!squareListenerMode) {
+      await this.page.waitForSelector('[aria-label="Participants"]', {
+        state: "visible",
+      });
+    }
 
     await this.stopRecording();
 
@@ -484,7 +490,7 @@ export class MeetsBot extends Bot {
       async (participant: Participant) => {
         await this.onEvent(EventCode.PARTICIPANT_LEAVE, participant);
         this.participants = this.participants.filter(
-          (p) => p.id != participant.id
+          (p) => p.name != participant.name
         );
         this.timeAloneStarted =
           this.participants.length === 1 ? Date.now() : Infinity;
@@ -535,183 +541,261 @@ export class MeetsBot extends Bot {
       }
     );
 
-    // Use in the browser context to monitor for participants joining, speaking and leaving
-    await this.page.evaluate(() => {
-      const peopleList = document.querySelector('[aria-label="Participants"]');
-      if (!peopleList) {
-        console.error("Could not find participants list element");
-        return;
-      }
-
-      const initialParticipants = peopleList.childNodes;
-
-      window.participantArray = [];
-      window.mergedAudioParticipantArray = [];
-
-      window.observeSpeech = (node, participant) => {
-        console.log("Observing speech for participant:", participant.name);
-        const activityObserver = new MutationObserver((mutations) => {
-          mutations.forEach(() => {
-            window.registerParticipantSpeaking(participant);
-          });
-        });
-        console.log("attaching observer");
-        activityObserver.observe(node, {
-          attributes: true,
-          subtree: true,
-          childList: true,
-          attributeFilter: ["class"],
-        });
-        participant.observer = activityObserver;
-      };
-
-      window.handleMergedAudio = () => {
-        const mergedAudioNode = document.querySelector(
-          '[aria-label="Merged audio"]'
-        );
-        if (mergedAudioNode) {
-          const detectedParticipants: Participant[] = [];
-          // @ts-ignore
-          mergedAudioNode.parentNode.childNodes.forEach((childNode: any) => {
-            const participantId = childNode.getAttribute("data-participant-id");
-            if (!participantId) {
-              return;
-            }
-            detectedParticipants.push({
-              id: participantId,
-              name: childNode.getAttribute("aria-label"),
+    if (squareListenerMode) {
+      await this.page.evaluate(() => {
+        window.observeSpeech = (node, participant) => {
+          console.log("Observing speech for participant:", participant.name);
+          const activityObserver = new MutationObserver((mutations) => {
+            mutations.forEach(() => {
+              window.registerParticipantSpeaking(participant);
             });
           });
+          console.log("attaching observer");
+          activityObserver.observe(node, {
+            attributes: true,
+            subtree: true,
+            childList: true,
+            attributeFilter: ["class"],
+          });
+          participant.observer = activityObserver;
+        };
 
-          if (
-            detectedParticipants.length >
-            window.mergedAudioParticipantArray.length
-          ) {
-            // new fucker merged
-            const filteredParticipants = detectedParticipants.filter(
-              (participant: Participant) =>
-                !window.mergedAudioParticipantArray.find(
-                  (p: Participant) => p.id === participant.id
-                )
+        window.checkParticipants = async () => {
+          const vidBlocks = document.querySelectorAll(
+            "[data-requested-participant-id]"
+          );
+          const currentParticipants = await window.getParticipants();
+          const detectedParticipants: { p: Participant; vb: Element }[] = [];
+          console.log("vidBlocks", vidBlocks);
+          console.log("currentParticipants", currentParticipants);
+          for (const vidBlock of vidBlocks) {
+            const nameSpan = Array.from(vidBlock.querySelectorAll("span")).find(
+              (el) => el.classList.contains("notranslate")
             );
-            filteredParticipants.forEach((participant: Participant) => {
-              const vidBlock = document.querySelector(
-                `[data-requested-participant-id="${participant.id}"]`
-              );
-              window.mergedAudioParticipantArray.push(participant);
-              window.addParticipant(participant);
-              window.observeSpeech(vidBlock, participant);
-              window.participantArray.push(participant);
+            const participant = {
+              id: vidBlock.getAttribute("data-requested-participant-id") || "",
+              name: nameSpan ? nameSpan.textContent || "Unknown" : "Unknown",
+            };
+            detectedParticipants.push({ p: participant, vb: vidBlock });
+          }
+          if (detectedParticipants.length > currentParticipants.length) {
+            console.log("New participant(s) detected");
+            const filteredParticipants = detectedParticipants.filter(
+              (participant) =>
+                !currentParticipants.find((p) => p.name === participant.p.name)
+            );
+            console.log("New Participants:", filteredParticipants);
+            filteredParticipants.forEach((participant) => {
+              console.log("Adding new participant:", participant.p);
+              window.addParticipant(participant.p);
+              window.observeSpeech(participant.vb, participant.p);
             });
-          } else if (
-            detectedParticipants.length <
-            window.mergedAudioParticipantArray.length
-          ) {
-            // fucker unmerged
-            const filteredParticipants =
-              window.mergedAudioParticipantArray.filter(
+          } else if (detectedParticipants.length < currentParticipants.length) {
+            console.log("Participant(s) left detected");
+            const filteredParticipants = currentParticipants.filter(
+              (participant) =>
+                !detectedParticipants.find((p) => p.p.name === participant.name)
+            );
+            console.log("Participants that left:", filteredParticipants);
+            filteredParticipants.forEach((participant) => {
+              console.log("Removing participant:", participant);
+              window.onParticipantLeave(participant);
+              window.participantArray = window.participantArray.filter(
+                (p: Participant) => p.name !== participant.name
+              );
+            });
+          }
+        };
+
+        setInterval(async () => {
+          await window.checkParticipants();
+        }, 3000);
+      });
+    } else {
+      // Use in the browser context to monitor for participants joining, speaking and leaving
+      await this.page.evaluate(() => {
+        const peopleList = document.querySelector(
+          '[aria-label="Participants"]'
+        );
+        if (!peopleList) {
+          console.error("Could not find participants list element");
+          return;
+        }
+
+        const initialParticipants = peopleList.childNodes;
+
+        window.participantArray = [];
+        window.mergedAudioParticipantArray = [];
+
+        window.observeSpeech = (node, participant) => {
+          console.log("Observing speech for participant:", participant.name);
+          const activityObserver = new MutationObserver((mutations) => {
+            mutations.forEach(() => {
+              window.registerParticipantSpeaking(participant);
+            });
+          });
+          console.log("attaching observer");
+          activityObserver.observe(node, {
+            attributes: true,
+            subtree: true,
+            childList: true,
+            attributeFilter: ["class"],
+          });
+          participant.observer = activityObserver;
+        };
+
+        window.handleMergedAudio = () => {
+          const mergedAudioNode = document.querySelector(
+            '[aria-label="Merged audio"]'
+          );
+          if (mergedAudioNode) {
+            const detectedParticipants: Participant[] = [];
+            // @ts-ignore
+            mergedAudioNode.parentNode.childNodes.forEach((childNode: any) => {
+              const participantId = childNode.getAttribute(
+                "data-participant-id"
+              );
+              if (!participantId) {
+                return;
+              }
+              detectedParticipants.push({
+                id: participantId,
+                name: childNode.getAttribute("aria-label"),
+              });
+            });
+
+            if (
+              detectedParticipants.length >
+              window.mergedAudioParticipantArray.length
+            ) {
+              // new fucker merged
+              const filteredParticipants = detectedParticipants.filter(
                 (participant: Participant) =>
-                  !detectedParticipants.find(
+                  !window.mergedAudioParticipantArray.find(
                     (p: Participant) => p.id === participant.id
                   )
               );
-            filteredParticipants.forEach((participant: Participant) => {
-              const vidBlock = document.querySelector(
-                `[data-requested-participant-id="${participant.id}"]`
-              );
-              if (!vidBlock) {
-                window.onParticipantLeave(participant);
-                window.participantArray = window.participantArray.filter(
-                  (p: Participant) => p.id !== participant.id
+              filteredParticipants.forEach((participant: Participant) => {
+                const vidBlock = document.querySelector(
+                  `[data-requested-participant-id="${participant.id}"]`
                 );
-              }
-              window.mergedAudioParticipantArray =
+                window.mergedAudioParticipantArray.push(participant);
+                window.addParticipant(participant);
+                window.observeSpeech(vidBlock, participant);
+                window.participantArray.push(participant);
+              });
+            } else if (
+              detectedParticipants.length <
+              window.mergedAudioParticipantArray.length
+            ) {
+              // fucker unmerged
+              const filteredParticipants =
                 window.mergedAudioParticipantArray.filter(
-                  (p: Participant) => p.id !== participant.id
+                  (participant: Participant) =>
+                    !detectedParticipants.find(
+                      (p: Participant) => p.id === participant.id
+                    )
                 );
-            });
+              filteredParticipants.forEach((participant: Participant) => {
+                const vidBlock = document.querySelector(
+                  `[data-requested-participant-id="${participant.id}"]`
+                );
+                if (!vidBlock) {
+                  window.onParticipantLeave(participant);
+                  window.participantArray = window.participantArray.filter(
+                    (p: Participant) => p.id !== participant.id
+                  );
+                }
+                window.mergedAudioParticipantArray =
+                  window.mergedAudioParticipantArray.filter(
+                    (p: Participant) => p.id !== participant.id
+                  );
+              });
+            }
           }
-        }
-      };
-
-      initialParticipants.forEach((node: any) => {
-        const participant = {
-          id: node.getAttribute("data-participant-id"),
-          name: node.getAttribute("aria-label"),
         };
-        if (!participant.id) {
-          window.handleMergedAudio();
-          return;
-        }
-        window.addParticipant(participant);
-        window.observeSpeech(node, participant);
-        window.participantArray.push(participant);
-      });
 
-      console.log("Setting up mutation observer on participants list");
-      const peopleObserver = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-          if (mutation.type === "childList") {
-            mutation.removedNodes.forEach((node: any) => {
-              console.log("Removed Node", node);
+        initialParticipants.forEach((node: any) => {
+          const participant = {
+            id: node.getAttribute("data-participant-id"),
+            name: node.getAttribute("aria-label"),
+          };
+          if (!participant.id) {
+            window.handleMergedAudio();
+            return;
+          }
+          window.addParticipant(participant);
+          window.observeSpeech(node, participant);
+          window.participantArray.push(participant);
+        });
+
+        console.log("Setting up mutation observer on participants list");
+        const peopleObserver = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            if (mutation.type === "childList") {
+              mutation.removedNodes.forEach((node: any) => {
+                console.log("Removed Node", node);
+                if (
+                  node.nodeType === Node.ELEMENT_NODE &&
+                  node.getAttribute &&
+                  node.getAttribute("data-participant-id") &&
+                  window.participantArray.find(
+                    (p: Participant) =>
+                      p.id === node.getAttribute("data-participant-id")
+                  )
+                ) {
+                  console.log(
+                    "Participant left:",
+                    node.getAttribute("aria-label")
+                  );
+                  window.onParticipantLeave({
+                    id: node.getAttribute("data-participant-id"),
+                    name: node.getAttribute("aria-label"),
+                  });
+                  window.participantArray = window.participantArray.filter(
+                    (p: Participant) =>
+                      p.id !== node.getAttribute("data-participant-id")
+                  );
+                } else if (
+                  document.querySelector('[aria-label="Merged audio"]')
+                ) {
+                  window.handleMergedAudio();
+                }
+              });
+            }
+            mutation.addedNodes.forEach((node: any) => {
+              console.log("Added Node", node);
               if (
-                node.nodeType === Node.ELEMENT_NODE &&
                 node.getAttribute &&
                 node.getAttribute("data-participant-id") &&
-                window.participantArray.find(
+                !window.participantArray.find(
                   (p: Participant) =>
                     p.id === node.getAttribute("data-participant-id")
                 )
               ) {
                 console.log(
-                  "Participant left:",
+                  "Participant joined:",
                   node.getAttribute("aria-label")
                 );
-                window.onParticipantLeave({
+                const participant = {
                   id: node.getAttribute("data-participant-id"),
                   name: node.getAttribute("aria-label"),
-                });
-                window.participantArray = window.participantArray.filter(
-                  (p: Participant) =>
-                    p.id !== node.getAttribute("data-participant-id")
-                );
+                };
+                window.onParticipantJoin(participant);
+                window.observeSpeech(node, participant);
+                window.participantArray.push(participant);
               } else if (
                 document.querySelector('[aria-label="Merged audio"]')
               ) {
                 window.handleMergedAudio();
               }
             });
-          }
-          mutation.addedNodes.forEach((node: any) => {
-            console.log("Added Node", node);
-            if (
-              node.getAttribute &&
-              node.getAttribute("data-participant-id") &&
-              !window.participantArray.find(
-                (p: Participant) =>
-                  p.id === node.getAttribute("data-participant-id")
-              )
-            ) {
-              console.log(
-                "Participant joined:",
-                node.getAttribute("aria-label")
-              );
-              const participant = {
-                id: node.getAttribute("data-participant-id"),
-                name: node.getAttribute("aria-label"),
-              };
-              window.onParticipantJoin(participant);
-              window.observeSpeech(node, participant);
-              window.participantArray.push(participant);
-            } else if (document.querySelector('[aria-label="Merged audio"]')) {
-              window.handleMergedAudio();
-            }
           });
         });
-      });
 
-      peopleObserver.observe(peopleList, { childList: true, subtree: true });
-    });
+        peopleObserver.observe(peopleList, { childList: true, subtree: true });
+      });
+    }
 
     while (true) {
       await this.handleInfoPopup(1000);
