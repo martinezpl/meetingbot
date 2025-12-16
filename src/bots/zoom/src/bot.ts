@@ -361,35 +361,34 @@ export class ZoomBot extends Bot {
         let participantSection = await frame.$(
           "div.ReactVirtualized__Grid__innerScrollContainer"
         );
-        if (!participantSection) {
+        if (!participantSection && isParticipantsButtonThere) {
           await frame.click(participantsButton);
           participantSection = await frame.$(
             "div.ReactVirtualized__Grid__innerScrollContainer"
           );
-        }
 
-        const participantNodes = await frame?.$$(".item-pos.participants-li");
-        if (!participantNodes || participantNodes.length === 0) {
-          console.log("No participant nodes found");
-          return;
-        }
+          const participantNodes = await frame?.$$(".item-pos.participants-li");
+          if (!participantNodes || participantNodes.length === 0) {
+            console.log("No participant nodes found");
+          } else {
+            for (const node of participantNodes) {
+              const participant = await frame?.evaluate((node) => {
+                const participantNode = node as HTMLElement;
+                const id = participantNode.id;
+                const name =
+                  participantNode.getAttribute("aria-label")?.split(",")[0] ??
+                  "Unknown";
+                return { id, name };
+              }, node);
 
-        for (const node of participantNodes) {
-          const participant = await frame?.evaluate((node) => {
-            const participantNode = node as HTMLElement;
-            const id = participantNode.id;
-            const name =
-              participantNode.getAttribute("aria-label")?.split(",")[0] ??
-              "Unknown";
-            return { id, name };
-          }, node);
-
-          const isSpeaking = await node.$(
-            ".participants-icon__voip-speaking-icon"
-          );
-          if (isSpeaking && participant) {
-            // Register that this participant is speaking
-            registerParticipantSpeaking(participant);
+              const isSpeaking = await node.$(
+                ".participants-icon__voip-speaking-icon"
+              );
+              if (isSpeaking && participant) {
+                // Register that this participant is speaking
+                registerParticipantSpeaking(participant);
+              }
+            }
           }
         }
       }
