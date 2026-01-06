@@ -341,6 +341,7 @@ export class ZoomBot extends Bot {
     const routineChecks = async () => {
       let endOk = null;
       let isParticipantsButtonThere = true;
+      let buttonFailing = false;
       if (frame) {
         endOk = await frame.$(
           "button.zm-btn.zm-btn-legacy.zm-btn--primary.zm-btn__outline--blue"
@@ -361,50 +362,63 @@ export class ZoomBot extends Bot {
         let participantSection = await frame.$(
           "div.ReactVirtualized__Grid__innerScrollContainer"
         );
-        if (!participantSection && isParticipantsButtonThere) {
-          await frame.click(participantsButton);
-          participantSection = await frame.$(
-            "div.ReactVirtualized__Grid__innerScrollContainer"
-          );
+        if (!participantSection) {
+          try {
+            await frame.click(participantsButton);
+            participantSection = await frame.$(
+              "div.ReactVirtualized__Grid__innerScrollContainer"
+            );
 
-          const participantNodes = await frame?.$$(".item-pos.participants-li");
-          if (!participantNodes || participantNodes.length === 0) {
-            console.log("No participant nodes found");
-          } else {
-            for (const node of participantNodes) {
-              const participant = await frame?.evaluate((node) => {
-                const participantNode = node as HTMLElement;
-                const id = participantNode.id;
-                const name =
-                  participantNode.getAttribute("aria-label")?.split(",")[0] ??
-                  "Unknown";
-                return { id, name };
-              }, node);
+            const participantNodes = await frame?.$$(
+              ".item-pos.participants-li"
+            );
+            if (!participantNodes || participantNodes.length === 0) {
+              console.log("No participant nodes found");
+            } else {
+              for (const node of participantNodes) {
+                const participant = await frame?.evaluate((node) => {
+                  const participantNode = node as HTMLElement;
+                  const id = participantNode.id;
+                  const name =
+                    participantNode.getAttribute("aria-label")?.split(",")[0] ??
+                    "Unknown";
+                  return { id, name };
+                }, node);
 
-              const isSpeaking = await node.$(
-                ".participants-icon__voip-speaking-icon"
-              );
-              if (isSpeaking && participant) {
-                // Register that this participant is speaking
-                registerParticipantSpeaking(participant);
+                const isSpeaking = await node.$(
+                  ".participants-icon__voip-speaking-icon"
+                );
+                if (isSpeaking && participant) {
+                  // Register that this participant is speaking
+                  registerParticipantSpeaking(participant);
+                }
               }
             }
+          } catch (e) {
+            console.log("Could not click participants button: ", e);
+            buttonFailing = true;
           }
         }
       }
 
-      const inactivityTime = this.lastActivity
-        ? Date.now() - this.lastActivity
-        : Infinity;
+      let isTimeToFuckOff: boolean;
 
-      const timeInMeeting = Date.now() - this.recordingStartedAt;
+      if (!buttonFailing) {
+        const inactivityTime = this.lastActivity
+          ? Date.now() - this.lastActivity
+          : Infinity;
 
-      const isDeadSilence =
-        inactivityTime > this.settings.automaticLeave.everyoneLeftTimeout;
+        const timeInMeeting = Date.now() - this.recordingStartedAt;
 
-      const isTimeToFuckOff =
-        timeInMeeting > this.settings.automaticLeave.noOneJoinedTimeout &&
-        isDeadSilence;
+        const isDeadSilence =
+          inactivityTime > this.settings.automaticLeave.everyoneLeftTimeout;
+
+        isTimeToFuckOff =
+          timeInMeeting > this.settings.automaticLeave.noOneJoinedTimeout &&
+          isDeadSilence;
+      } else {
+        isTimeToFuckOff = false;
+      }
 
       const hasMeetingEnded = !frame || !isParticipantsButtonThere;
 
