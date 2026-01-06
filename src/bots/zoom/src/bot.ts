@@ -339,22 +339,27 @@ export class ZoomBot extends Bot {
 
     // Constantly check if the meeting has ended
     const routineChecks = async () => {
+      console.log("routine check");
       let endOk = null;
       let isParticipantsButtonThere = true;
       let buttonFailing = false;
       if (frame) {
+        console.log("frame found");
         endOk = await frame.$(
           "button.zm-btn.zm-btn-legacy.zm-btn--primary.zm-btn__outline--blue"
         );
         if (endOk) {
+          console.log("endOk found");
           await endOk.click();
         }
         const notifClose = await frame.$('i[aria-label="close"]');
         if (notifClose) {
+          console.log("notifClose found");
           await notifClose.click();
         }
         const notifClose2 = await frame.$('i[aria-label="Close Medium"]');
         if (notifClose2) {
+          console.log("notifClose2 found");
           await notifClose2.click();
         }
         isParticipantsButtonThere = !!(await frame.$(participantsButton));
@@ -362,38 +367,16 @@ export class ZoomBot extends Bot {
         let participantSection = await frame.$(
           "div.ReactVirtualized__Grid__innerScrollContainer"
         );
+        console.log("participantSection found", participantSection);
         if (!participantSection) {
           try {
+            console.log("clicking participants button");
             await frame.click(participantsButton);
+            console.log("clicked participants button");
             participantSection = await frame.$(
               "div.ReactVirtualized__Grid__innerScrollContainer"
             );
-
-            const participantNodes = await frame?.$$(
-              ".item-pos.participants-li"
-            );
-            if (!participantNodes || participantNodes.length === 0) {
-              console.log("No participant nodes found");
-            } else {
-              for (const node of participantNodes) {
-                const participant = await frame?.evaluate((node) => {
-                  const participantNode = node as HTMLElement;
-                  const id = participantNode.id;
-                  const name =
-                    participantNode.getAttribute("aria-label")?.split(",")[0] ??
-                    "Unknown";
-                  return { id, name };
-                }, node);
-
-                const isSpeaking = await node.$(
-                  ".participants-icon__voip-speaking-icon"
-                );
-                if (isSpeaking && participant) {
-                  // Register that this participant is speaking
-                  registerParticipantSpeaking(participant);
-                }
-              }
-            }
+            console.log("participantSection found");
           } catch (e) {
             console.log("Could not click participants button: ", e);
             buttonFailing = true;
@@ -401,9 +384,37 @@ export class ZoomBot extends Bot {
         }
       }
 
+      const participantNodes = await frame?.$$(".item-pos.participants-li");
+      if (!participantNodes || participantNodes.length === 0) {
+        console.log("No participant nodes found");
+      } else {
+        console.log("participantNodes found");
+        for (const node of participantNodes) {
+          console.log("node found");
+          const participant = await frame?.evaluate((node) => {
+            const participantNode = node as HTMLElement;
+            const id = participantNode.id;
+            const name =
+              participantNode.getAttribute("aria-label")?.split(",")[0] ??
+              "Unknown";
+            return { id, name };
+          }, node);
+
+          console.log("participant found");
+          const isSpeaking = await node.$(
+            ".participants-icon__voip-speaking-icon"
+          );
+          if (isSpeaking && participant) {
+            // Register that this participant is speaking
+            registerParticipantSpeaking(participant);
+          }
+        }
+      }
+
       let isTimeToFuckOff: boolean;
 
       if (!buttonFailing) {
+        console.log("buttonFailing is false");
         const inactivityTime = this.lastActivity
           ? Date.now() - this.lastActivity
           : Infinity;
@@ -417,6 +428,7 @@ export class ZoomBot extends Bot {
           timeInMeeting > this.settings.automaticLeave.noOneJoinedTimeout &&
           isDeadSilence;
       } else {
+        console.log("buttonFailing is true");
         isTimeToFuckOff = false;
       }
 
