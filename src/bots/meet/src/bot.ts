@@ -560,6 +560,8 @@ export class MeetsBot extends Bot {
           participant.observer = activityObserver;
         };
 
+        window.participantArray = [];
+
         window.checkParticipants = async () => {
           const vidBlocks = document.querySelectorAll(
             "[data-requested-participant-id]"
@@ -589,6 +591,7 @@ export class MeetsBot extends Bot {
               console.log("Adding new participant:", participant.p);
               window.addParticipant(participant.p);
               window.observeSpeech(participant.vb, participant.p);
+              window.participantArray.push(participant.p);
             });
           } else if (detectedParticipants.length < currentParticipants.length) {
             console.log("Participant(s) left detected");
@@ -599,6 +602,10 @@ export class MeetsBot extends Bot {
             console.log("Participants that left:", filteredParticipants);
             filteredParticipants.forEach((participant) => {
               console.log("Removing participant:", participant);
+              const tracked = window.participantArray.find(
+                (p: Participant) => p.name === participant.name
+              );
+              tracked?.observer?.disconnect();
               window.onParticipantLeave(participant);
               window.participantArray = window.participantArray.filter(
                 (p: Participant) => p.name !== participant.name
@@ -701,6 +708,7 @@ export class MeetsBot extends Bot {
                   `[data-requested-participant-id="${participant.id}"]`
                 );
                 if (!vidBlock) {
+                  participant.observer?.disconnect();
                   window.onParticipantLeave(participant);
                   window.participantArray = window.participantArray.filter(
                     (p: Participant) => p.id !== participant.id
@@ -748,6 +756,11 @@ export class MeetsBot extends Bot {
                     "Participant left:",
                     node.getAttribute("aria-label")
                   );
+                  const tracked = window.participantArray.find(
+                    (p: Participant) =>
+                      p.id === node.getAttribute("data-participant-id")
+                  );
+                  tracked?.observer?.disconnect();
                   window.onParticipantLeave({
                     id: node.getAttribute("data-participant-id"),
                     name: node.getAttribute("aria-label"),
