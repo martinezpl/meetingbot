@@ -54,7 +54,7 @@ export class TeamsBot extends Bot {
 
   constructor(
     botSettings: BotConfig,
-    onEvent: (eventType: EventCode, data?: any) => Promise<void>
+    onEvent: (eventType: EventCode, data?: any) => Promise<void>,
   ) {
     super(botSettings, onEvent);
     this.recordingPath = "./recording.webm";
@@ -90,7 +90,7 @@ export class TeamsBot extends Bot {
 
     const threshold = 1000;
     for (const [speakerName, timeframesArray] of Object.entries(
-      this.speakerTimeframes
+      this.speakerTimeframes,
     )) {
       let start = timeframesArray[0];
       let end = timeframesArray[0];
@@ -211,7 +211,11 @@ export class TeamsBot extends Bot {
       executablePath: puppeteer.executablePath(),
       headless: "new",
       // args: ["--use-fake-ui-for-media-stream"],
-      args: ["--no-sandbox"],
+      args: [
+        "--no-sandbox",
+        // "--remote-debugging-port=9222",
+        // "--remote-debugging-address=0.0.0.0",
+      ],
       protocolTimeout: 0,
     })) as unknown as Browser;
 
@@ -252,10 +256,12 @@ export class TeamsBot extends Bot {
 
     try {
       // Wait for the "Continue without audio or video" button to appear
-      await this.page.waitForSelector("#dialog-content-2 > div > button", {
+      const continueWithoutMediaSelector =
+        '[data-tid="get-user-media-wrapper"] [data-focus-target="gum-continue"]';
+      await this.page.waitForSelector(continueWithoutMediaSelector, {
         timeout: 5000,
       });
-      await this.page.click("#dialog-content-2 > div > button");
+      await this.page.click(continueWithoutMediaSelector);
       console.log('Clicked "Continue without audio or video" button');
     } catch (error) {
       console.log("No 'Continue without audio or video' button found");
@@ -286,7 +292,7 @@ export class TeamsBot extends Bot {
           return !joinButton || joinButton.hasAttribute("disabled");
         },
         {},
-        '[data-tid="prejoin-join-button"]'
+        '[data-tid="prejoin-join-button"]',
       );
     } catch (error) {
       console.log("Error waiting for join button to be disabled:", error);
@@ -309,7 +315,7 @@ export class TeamsBot extends Bot {
             : `${
                 this.settings.automaticLeave.waitingRoomTimeout / 1000
               } second(s)`
-        }`
+        }`,
       );
 
       // if in the waiting room, wait for the waiting room timeout
@@ -320,11 +326,11 @@ export class TeamsBot extends Bot {
     console.log(
       "Waiting for the ability to leave the meeting (when I'm in the meeting...)",
       timeout,
-      "ms"
+      "ms",
     );
     try {
       await this.page.waitForSelector(leaveButtonSelector, {
-        timeout: timeout,
+        timeout: timeout * 20,
       });
     } catch (error) {
       // Distinct error from regular timeout
@@ -354,7 +360,7 @@ export class TeamsBot extends Bot {
     // Get the stream
     this.stream = await getStream(
       this.page as any, //puppeteer type issue
-      { audio: true, video: true }
+      { audio: true, video: true },
     );
 
     // Create a file
@@ -390,7 +396,7 @@ export class TeamsBot extends Bot {
           return;
         }
         console.log(
-          `Participant ${participant.name} is speaking at ${relativeTimestamp}ms`
+          `Participant ${participant.name} is speaking at ${relativeTimestamp}ms`,
         );
 
         if (!this.speakerTimeframes[participant.name]) {
@@ -398,7 +404,7 @@ export class TeamsBot extends Bot {
         } else {
           this.speakerTimeframes[participant.name]!.push(relativeTimestamp);
         }
-      }
+      },
     );
 
     await this.startRecording(true);
@@ -433,16 +439,16 @@ export class TeamsBot extends Bot {
 
           let currentElements = Array.from(
             participantsList.querySelectorAll(
-              '[data-tid^="participantsInCall-"]'
-            )
+              '[data-tid^="participantsInCall-"]',
+            ),
           );
           let participants = [];
 
           if (currentElements.length === 0) {
             currentElements = Array.from(
               participantsList.querySelectorAll(
-                '[data-cid="roster-participant"]'
-              )
+                '[data-cid="roster-participant"]',
+              ),
             );
 
             participants = currentElements.map((el) => {
@@ -497,7 +503,7 @@ export class TeamsBot extends Bot {
     // Then check for participants every heartbeatInterval milliseconds
     this.participantsIntervalId = setInterval(
       updateParticipants,
-      this.settings.heartbeatInterval
+      this.settings.heartbeatInterval,
     );
 
     const checkSpeech = () => {
@@ -506,7 +512,9 @@ export class TeamsBot extends Bot {
         .evaluate(() => {
           // Find all voice level elements
           const voiceLevelElements = Array.from(
-            document.querySelectorAll('[data-tid="voice-level-stream-outline"]')
+            document.querySelectorAll(
+              '[data-tid="voice-level-stream-outline"]',
+            ),
           );
 
           voiceLevelElements.forEach((elem) => {

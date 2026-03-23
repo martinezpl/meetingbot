@@ -9,10 +9,10 @@ importers:
   .:
     dependencies:
       puppeteer:
-        specifier: ^24.7.0
+        specifier: 24.7.0
         version: 24.7.0(typescript@5.7.3)
       puppeteer-stream:
-        specifier: ^3.0.19
+        specifier: 3.0.19
         version: 3.0.19
 
 packages:
@@ -328,6 +328,7 @@ packages:
   puppeteer@24.7.0:
     resolution: {integrity: sha512-txRZf6QPYEBhnyzzPMCvWm20tstDbbN+j2e9L6+ib4Q+/9+d2V2CPfFnF0mbcW3txEwDlYrN84YLRYpS9/eSOw==}
     engines: {node: '>=18'}
+    deprecated: < 24.15.0 is no longer supported
     hasBin: true
 
   require-directory@2.1.1:
@@ -411,18 +412,6 @@ packages:
 
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
-
-  ws@8.18.0:
-    resolution: {integrity: sha512-8VbfWfHLbbwu3+N6OKsOMpBdT4kXPDDB9cJk2bJ6mh9ucxdlnNvH1e+roYkKmN9Nxw2yjz7VzeO9oOz2zJ04Pw==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
-        optional: true
 
   ws@8.18.1:
     resolution: {integrity: sha512-RKW2aJZMXeMxVpnZ6bck+RswznaxmzdULiBr6KY7XkTnW8uvt0iT9H5DkHUChXrc+uurzwa0rVI16n/Xzjdz1w==}
@@ -785,7 +774,7 @@ snapshots:
       chromium-bidi: 0.6.3(devtools-protocol@0.0.1312386)
       debug: 4.4.0
       devtools-protocol: 0.0.1312386
-      ws: 8.18.0
+      ws: 8.18.1
     transitivePeerDependencies:
       - bare-buffer
       - bufferutil
@@ -809,7 +798,7 @@ snapshots:
   puppeteer-stream@3.0.19:
     dependencies:
       puppeteer-core: 22.15.0
-      ws: 8.18.0
+      ws: 8.18.1
     transitivePeerDependencies:
       - bare-buffer
       - bufferutil
@@ -920,8 +909,6 @@ snapshots:
       strip-ansi: 6.0.1
 
   wrappy@1.0.2: {}
-
-  ws@8.18.0: {}
 
   ws@8.18.1: {}
 
