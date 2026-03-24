@@ -409,8 +409,6 @@ export class TeamsBot extends Bot {
 
     await this.startRecording(true);
 
-    this.recordingStartedAt = Date.now();
-
     // Start Join
     await this.joinMeeting();
 
@@ -542,6 +540,7 @@ export class TeamsBot extends Bot {
 
     await this.stopRecording();
     await this.startRecording();
+    this.recordingStartedAt = Date.now();
 
     while (
       this.participants.length <= 1 &&
