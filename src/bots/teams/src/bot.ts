@@ -330,7 +330,7 @@ export class TeamsBot extends Bot {
     );
     try {
       await this.page.waitForSelector(leaveButtonSelector, {
-        timeout: timeout * 20,
+        timeout: timeout,
       });
     } catch (error) {
       // Distinct error from regular timeout
