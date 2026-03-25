@@ -541,8 +541,10 @@ export class MeetsBot extends Bot {
       }
     );
 
+    const botDisplayName = this.settings.botDisplayName || "MeetingBot";
+
     if (squareListenerMode) {
-      await this.page.evaluate(() => {
+      await this.page.evaluate((botName) => {
         window.observeSpeech = (node, participant) => {
           console.log("Observing speech for participant:", participant.name);
           const activityObserver = new MutationObserver((mutations) => {
@@ -590,7 +592,9 @@ export class MeetsBot extends Bot {
             filteredParticipants.forEach((participant) => {
               console.log("Adding new participant:", participant.p);
               window.addParticipant(participant.p);
-              window.observeSpeech(participant.vb, participant.p);
+              if (participant.p.name !== botName) {
+                window.observeSpeech(participant.vb, participant.p);
+              }
               window.participantArray.push(participant.p);
             });
           } else if (detectedParticipants.length < currentParticipants.length) {
@@ -617,10 +621,10 @@ export class MeetsBot extends Bot {
         setInterval(async () => {
           await window.checkParticipants();
         }, 3000);
-      });
+      }, botDisplayName);
     } else {
       // Use in the browser context to monitor for participants joining, speaking and leaving
-      await this.page.evaluate(() => {
+      await this.page.evaluate((botName) => {
         const peopleList = document.querySelector(
           '[aria-label="Participants"]'
         );
@@ -688,7 +692,9 @@ export class MeetsBot extends Bot {
                 );
                 window.mergedAudioParticipantArray.push(participant);
                 window.addParticipant(participant);
-                window.observeSpeech(vidBlock, participant);
+                if (participant.name !== botName) {
+                  window.observeSpeech(vidBlock, participant);
+                }
                 window.participantArray.push(participant);
               });
             } else if (
@@ -733,7 +739,9 @@ export class MeetsBot extends Bot {
             return;
           }
           window.addParticipant(participant);
-          window.observeSpeech(node, participant);
+          if (participant.name !== botName) {
+            window.observeSpeech(node, participant);
+          }
           window.participantArray.push(participant);
         });
 
@@ -795,7 +803,9 @@ export class MeetsBot extends Bot {
                   name: node.getAttribute("aria-label"),
                 };
                 window.onParticipantJoin(participant);
-                window.observeSpeech(node, participant);
+                if (participant.name !== botName) {
+                  window.observeSpeech(node, participant);
+                }
                 window.participantArray.push(participant);
               } else if (
                 document.querySelector('[aria-label="Merged audio"]')
@@ -807,7 +817,7 @@ export class MeetsBot extends Bot {
         });
 
         peopleObserver.observe(peopleList, { childList: true, subtree: true });
-      });
+      }, botDisplayName);
     }
 
     while (true) {
