@@ -169,7 +169,7 @@ const main = async () => {
     const putCommand = new PutObjectCommand(commandObjects);
     await s3Client.send(putCommand);
     console.log(
-      `Successfully uploaded debug.html to S3: debug/html/${botId}.html`
+      `Successfully uploaded debug.html to S3: debug/html/${botId}.html`,
     );
     // Clean up local file
     await fs.promises.unlink("./debug.html");
@@ -220,12 +220,12 @@ const main = async () => {
           }
         }),
           ffmpegProcess.on("exit", resolve);
-        ffmpegProcess.stdout.on("data", (data) => {
-          console.log(`ffmpeg: ${data}`);
-        });
-        ffmpegProcess.stderr.on("data", (data) => {
-          console.error(`ffmpeg err: ${data}`);
-        });
+        // ffmpegProcess.stdout.on("data", (data) => {
+        //   console.log(`ffmpeg: ${data}`);
+        // });
+        // ffmpegProcess.stderr.on("data", (data) => {
+        //   console.error(`ffmpeg err: ${data}`);
+        // });
       });
       recordingPath = recordingPath.replace(/\.[^/.]+$/, ".mp4");
       contentType = "video/mp4";

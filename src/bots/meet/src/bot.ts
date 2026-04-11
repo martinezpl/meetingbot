@@ -348,13 +348,13 @@ export class MeetsBot extends Bot {
     console.log("ffmpeg recording started.");
     this.recordingStartedAt = Date.now();
     // This may be too noisy
-    this.ffmpegProcess.stdout.on("data", (data) => {
-      console.log(`ffmpeg: ${data}`);
-    });
+    // this.ffmpegProcess.stdout.on("data", (data) => {
+    //   console.log(`ffmpeg: ${data}`);
+    // });
 
-    this.ffmpegProcess.stderr.on("data", (data) => {
-      console.error(`ffmpeg err: ${data}`);
-    });
+    // this.ffmpegProcess.stderr.on("data", (data) => {
+    //   console.error(`ffmpeg err: ${data}`);
+    // });
 
     this.ffmpegProcess.on("exit", (code) => {
       console.log(`ffmpeg process exited with code ${code}`);
