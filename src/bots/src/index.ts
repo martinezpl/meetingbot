@@ -98,6 +98,27 @@ const main = async () => {
       await reportEvent(botId, EventCode.NOT_ADMITTED, {
         description: (error as Error).message,
       });
+      // @ts-ignore
+      const debugPath = bot.debugRecordingPath;
+      if (debugPath && fs.existsSync(debugPath)) {
+        try {
+          const fileContent = readFileSync(debugPath);
+          console.log("Uploading not-admitted debug recording...");
+          const contentType = bot.getContentType();
+          const debugKey = `debug/not-admitted/${bot.settings.id}.${contentType.split("/")[1]}`;
+          const putCommand = new PutObjectCommand({
+            Bucket: process.env.AWS_BUCKET_NAME!,
+            Key: debugKey,
+            Body: fileContent,
+            ContentType: contentType,
+          });
+          await s3Client.send(putCommand);
+          console.log(`Uploaded not-admitted recording to S3: ${debugKey}`);
+          await fs.promises.unlink(debugPath);
+        } catch (uploadErr) {
+          console.error("Failed to upload not-admitted recording:", uploadErr);
+        }
+      }
       process.exit(0);
     }
     await reportEvent(botId, EventCode.FATAL, {

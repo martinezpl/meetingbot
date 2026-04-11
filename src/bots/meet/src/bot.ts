@@ -89,7 +89,7 @@ export class MeetsBot extends Bot {
    */
   constructor(
     botSettings: BotConfig,
-    onEvent: (eventType: EventCode, data?: any) => Promise<void>
+    onEvent: (eventType: EventCode, data?: any) => Promise<void>,
   ) {
     super(botSettings, onEvent);
     this.debug = process.env.DEBUG ? true : false;
@@ -132,7 +132,7 @@ export class MeetsBot extends Bot {
 
     const threshold = 3000;
     for (const [speakerName, timeframesArray] of Object.entries(
-      this.speakerTimeframes
+      this.speakerTimeframes,
     )) {
       let start = timeframesArray[0];
       let end = timeframesArray[0];
@@ -248,7 +248,7 @@ export class MeetsBot extends Bot {
     await this.page.fill(enterNameField, name);
 
     console.log(
-      'Waiting for either the "Join now" or "Ask to join" button to appear...'
+      'Waiting for either the "Join now" or "Ask to join" button to appear...',
     );
     const entryButton = await Promise.race([
       this.page
@@ -303,7 +303,7 @@ export class MeetsBot extends Bot {
     const videoSource = ":99.0";
     const audioSource = "VirtualSink.monitor";
     const audioBitrate = "128k";
-    const fps = "15";
+    const fps = "7";
 
     const ffmpegArgs = [
       "-thread_queue_size",
@@ -403,7 +403,7 @@ export class MeetsBot extends Bot {
       console.log("Left Call.");
     } catch {
       console.log(
-        "Attempted to Leave Call - couldn't (probably already left)."
+        "Attempted to Leave Call - couldn't (probably already left).",
       );
     }
 
@@ -430,7 +430,7 @@ export class MeetsBot extends Bot {
     // Check if the people icon exists and click its parent button
     const hasNewPeopleIcon = await this.page.evaluate(() => {
       const peopleButton = Array.from(document.querySelectorAll("button")).find(
-        (el) => el.ariaLabel?.includes("People")
+        (el) => el.ariaLabel?.includes("People"),
       );
       if (peopleButton) {
         peopleButton.click();
@@ -441,7 +441,7 @@ export class MeetsBot extends Bot {
 
     const hasOldPeopleIcon = await this.page.evaluate(() => {
       const peopleButtonChild = Array.from(document.querySelectorAll("i")).find(
-        (el) => el.textContent?.trim() === "people"
+        (el) => el.textContent?.trim() === "people",
       );
       if (peopleButtonChild) {
         const newPeopleButton = peopleButtonChild.closest("button");
@@ -478,7 +478,7 @@ export class MeetsBot extends Bot {
       async (participant: Participant) => {
         this.participants.push(participant);
         await this.onEvent(EventCode.PARTICIPANT_JOIN, participant);
-      }
+      },
     );
 
     await this.page.exposeFunction("getParticipants", () => {
@@ -490,11 +490,11 @@ export class MeetsBot extends Bot {
       async (participant: Participant) => {
         await this.onEvent(EventCode.PARTICIPANT_LEAVE, participant);
         this.participants = this.participants.filter(
-          (p) => p.name != participant.name
+          (p) => p.name != participant.name,
         );
         this.timeAloneStarted =
           this.participants.length === 1 ? Date.now() : Infinity;
-      }
+      },
     );
 
     await this.page.exposeFunction(
@@ -507,13 +507,13 @@ export class MeetsBot extends Bot {
           } else if (this.participants.find((x) => x.id === p.id)) {
             await this.onEvent(EventCode.PARTICIPANT_LEAVE, p);
             this.participants = this.participants.filter(
-              (parti) => parti.id != p.id
+              (parti) => parti.id != p.id,
             );
             this.timeAloneStarted =
               this.participants.length === 1 ? Date.now() : Infinity;
           }
         });
-      }
+      },
     );
 
     await this.page.exposeFunction(
@@ -522,7 +522,7 @@ export class MeetsBot extends Bot {
         this.lastActivity = Date.now();
         const relativeTimestamp = Date.now() - this.recordingStartedAt;
         console.log(
-          `Participant ${participant.name} is speaking at ${relativeTimestamp}ms`
+          `Participant ${participant.name} is speaking at ${relativeTimestamp}ms`,
         );
 
         if (!this.speakerTimeframes[participant.name]) {
@@ -530,7 +530,7 @@ export class MeetsBot extends Bot {
         } else {
           this.speakerTimeframes[participant.name]!.push(relativeTimestamp);
         }
-      }
+      },
     );
 
     await this.page.exposeFunction(
@@ -538,7 +538,7 @@ export class MeetsBot extends Bot {
       async (participant: Participant) => {
         console.log("Adding participant:", participant);
         this.participants.push(participant);
-      }
+      },
     );
 
     const botDisplayName = this.settings.botDisplayName || "MeetingBot";
@@ -566,7 +566,7 @@ export class MeetsBot extends Bot {
 
         window.checkParticipants = async () => {
           const vidBlocks = document.querySelectorAll(
-            "[data-requested-participant-id]"
+            "[data-requested-participant-id]",
           );
           const currentParticipants = await window.getParticipants();
           const detectedParticipants: { p: Participant; vb: Element }[] = [];
@@ -574,7 +574,7 @@ export class MeetsBot extends Bot {
           console.log("currentParticipants", currentParticipants);
           for (const vidBlock of vidBlocks) {
             const nameSpan = Array.from(vidBlock.querySelectorAll("span")).find(
-              (el) => el.classList.contains("notranslate")
+              (el) => el.classList.contains("notranslate"),
             );
             const participant = {
               id: vidBlock.getAttribute("data-requested-participant-id") || "",
@@ -586,7 +586,7 @@ export class MeetsBot extends Bot {
             console.log("New participant(s) detected");
             const filteredParticipants = detectedParticipants.filter(
               (participant) =>
-                !currentParticipants.find((p) => p.name === participant.p.name)
+                !currentParticipants.find((p) => p.name === participant.p.name),
             );
             console.log("New Participants:", filteredParticipants);
             filteredParticipants.forEach((participant) => {
@@ -601,18 +601,20 @@ export class MeetsBot extends Bot {
             console.log("Participant(s) left detected");
             const filteredParticipants = currentParticipants.filter(
               (participant) =>
-                !detectedParticipants.find((p) => p.p.name === participant.name)
+                !detectedParticipants.find(
+                  (p) => p.p.name === participant.name,
+                ),
             );
             console.log("Participants that left:", filteredParticipants);
             filteredParticipants.forEach((participant) => {
               console.log("Removing participant:", participant);
               const tracked = window.participantArray.find(
-                (p: Participant) => p.name === participant.name
+                (p: Participant) => p.name === participant.name,
               );
               tracked?.observer?.disconnect();
               window.onParticipantLeave(participant);
               window.participantArray = window.participantArray.filter(
-                (p: Participant) => p.name !== participant.name
+                (p: Participant) => p.name !== participant.name,
               );
             });
           }
@@ -626,7 +628,7 @@ export class MeetsBot extends Bot {
       // Use in the browser context to monitor for participants joining, speaking and leaving
       await this.page.evaluate((botName) => {
         const peopleList = document.querySelector(
-          '[aria-label="Participants"]'
+          '[aria-label="Participants"]',
         );
         if (!peopleList) {
           console.error("Could not find participants list element");
@@ -657,14 +659,14 @@ export class MeetsBot extends Bot {
 
         window.handleMergedAudio = () => {
           const mergedAudioNode = document.querySelector(
-            '[aria-label="Merged audio"]'
+            '[aria-label="Merged audio"]',
           );
           if (mergedAudioNode) {
             const detectedParticipants: Participant[] = [];
             // @ts-ignore
             mergedAudioNode.parentNode.childNodes.forEach((childNode: any) => {
               const participantId = childNode.getAttribute(
-                "data-participant-id"
+                "data-participant-id",
               );
               if (!participantId) {
                 return;
@@ -683,12 +685,12 @@ export class MeetsBot extends Bot {
               const filteredParticipants = detectedParticipants.filter(
                 (participant: Participant) =>
                   !window.mergedAudioParticipantArray.find(
-                    (p: Participant) => p.id === participant.id
-                  )
+                    (p: Participant) => p.id === participant.id,
+                  ),
               );
               filteredParticipants.forEach((participant: Participant) => {
                 const vidBlock = document.querySelector(
-                  `[data-requested-participant-id="${participant.id}"]`
+                  `[data-requested-participant-id="${participant.id}"]`,
                 );
                 window.mergedAudioParticipantArray.push(participant);
                 window.addParticipant(participant);
@@ -706,23 +708,23 @@ export class MeetsBot extends Bot {
                 window.mergedAudioParticipantArray.filter(
                   (participant: Participant) =>
                     !detectedParticipants.find(
-                      (p: Participant) => p.id === participant.id
-                    )
+                      (p: Participant) => p.id === participant.id,
+                    ),
                 );
               filteredParticipants.forEach((participant: Participant) => {
                 const vidBlock = document.querySelector(
-                  `[data-requested-participant-id="${participant.id}"]`
+                  `[data-requested-participant-id="${participant.id}"]`,
                 );
                 if (!vidBlock) {
                   participant.observer?.disconnect();
                   window.onParticipantLeave(participant);
                   window.participantArray = window.participantArray.filter(
-                    (p: Participant) => p.id !== participant.id
+                    (p: Participant) => p.id !== participant.id,
                   );
                 }
                 window.mergedAudioParticipantArray =
                   window.mergedAudioParticipantArray.filter(
-                    (p: Participant) => p.id !== participant.id
+                    (p: Participant) => p.id !== participant.id,
                   );
               });
             }
@@ -757,16 +759,16 @@ export class MeetsBot extends Bot {
                   node.getAttribute("data-participant-id") &&
                   window.participantArray.find(
                     (p: Participant) =>
-                      p.id === node.getAttribute("data-participant-id")
+                      p.id === node.getAttribute("data-participant-id"),
                   )
                 ) {
                   console.log(
                     "Participant left:",
-                    node.getAttribute("aria-label")
+                    node.getAttribute("aria-label"),
                   );
                   const tracked = window.participantArray.find(
                     (p: Participant) =>
-                      p.id === node.getAttribute("data-participant-id")
+                      p.id === node.getAttribute("data-participant-id"),
                   );
                   tracked?.observer?.disconnect();
                   window.onParticipantLeave({
@@ -775,7 +777,7 @@ export class MeetsBot extends Bot {
                   });
                   window.participantArray = window.participantArray.filter(
                     (p: Participant) =>
-                      p.id !== node.getAttribute("data-participant-id")
+                      p.id !== node.getAttribute("data-participant-id"),
                   );
                 } else if (
                   document.querySelector('[aria-label="Merged audio"]')
@@ -791,12 +793,12 @@ export class MeetsBot extends Bot {
                 node.getAttribute("data-participant-id") &&
                 !window.participantArray.find(
                   (p: Participant) =>
-                    p.id === node.getAttribute("data-participant-id")
+                    p.id === node.getAttribute("data-participant-id"),
                 )
               ) {
                 console.log(
                   "Participant joined:",
-                  node.getAttribute("aria-label")
+                  node.getAttribute("aria-label"),
                 );
                 const participant = {
                   id: node.getAttribute("data-participant-id"),
