@@ -16,7 +16,7 @@ data "aws_availability_zones" "available" {}
 locals {
   name = "${var.app_name}-${terraform.workspace}"
 
-  azs = slice(data.aws_availability_zones.available.names, 0, 3)
+  azs = slice(data.aws_availability_zones.available.names, 0, 2)
 
   current_commit_sha_short = "7987da9"
 
