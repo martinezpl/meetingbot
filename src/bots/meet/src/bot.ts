@@ -52,7 +52,7 @@ declare global {
     onParticipantLeave: (participant: Participant) => void;
     updateParticipants: (participants: Participant[]) => void;
     registerParticipantSpeaking: (participant: Participant) => void;
-    observeSpeech: (node: any, participant: Participant) => void;
+    observeSpeech: (node: any, participant?: Participant) => void;
     debugMutationLog: (mutationData: any) => void;
     isDebug: () => boolean;
     participantArray: Participant[];
@@ -545,21 +545,33 @@ export class MeetsBot extends Bot {
 
     if (squareListenerMode) {
       await this.page.evaluate((botName) => {
-        window.observeSpeech = (node, participant) => {
-          console.log("Observing speech for participant:", participant.name);
-          const activityObserver = new MutationObserver((mutations) => {
-            mutations.forEach(() => {
-              window.registerParticipantSpeaking(participant);
-            });
+        const vidBlockObservers = new Map<Element, MutationObserver>();
+
+        window.observeSpeech = (node) => {
+          if (vidBlockObservers.has(node)) return;
+          const activityObserver = new MutationObserver(() => {
+            const currentId =
+              node.getAttribute("data-requested-participant-id") || "";
+            const nameSpan = Array.from(
+              node.querySelectorAll("span") as NodeListOf<HTMLSpanElement>,
+            ).find((el) => el.classList.contains("notranslate"));
+            const currentName = nameSpan
+              ? nameSpan.textContent || "Unknown"
+              : "Unknown";
+            if (currentName !== botName && currentName !== "Unknown") {
+              window.registerParticipantSpeaking({
+                id: currentId,
+                name: currentName,
+              });
+            }
           });
-          console.log("attaching observer");
           activityObserver.observe(node, {
             attributes: true,
             subtree: true,
             childList: true,
             attributeFilter: ["class"],
           });
-          participant.observer = activityObserver;
+          vidBlockObservers.set(node, activityObserver);
         };
 
         window.participantArray = [];
@@ -569,54 +581,53 @@ export class MeetsBot extends Bot {
             "[data-requested-participant-id]",
           );
           const currentParticipants = await window.getParticipants();
-          const detectedParticipants: { p: Participant; vb: Element }[] = [];
-          console.log("vidBlocks", vidBlocks);
-          console.log("currentParticipants", currentParticipants);
+
+          const detectedMap = new Map<
+            string,
+            { p: Participant; vb: Element }
+          >();
           for (const vidBlock of vidBlocks) {
-            const nameSpan = Array.from(vidBlock.querySelectorAll("span")).find(
-              (el) => el.classList.contains("notranslate"),
-            );
-            const participant = {
-              id: vidBlock.getAttribute("data-requested-participant-id") || "",
-              name: nameSpan ? nameSpan.textContent || "Unknown" : "Unknown",
-            };
-            detectedParticipants.push({ p: participant, vb: vidBlock });
+            const nameSpan = Array.from(
+              vidBlock.querySelectorAll("span"),
+            ).find((el) => el.classList.contains("notranslate"));
+            const id =
+              vidBlock.getAttribute("data-requested-participant-id") || "";
+            const name = nameSpan
+              ? nameSpan.textContent || "Unknown"
+              : "Unknown";
+            detectedMap.set(id, { p: { id, name }, vb: vidBlock });
+            window.observeSpeech(vidBlock);
           }
-          if (detectedParticipants.length > currentParticipants.length) {
-            console.log("New participant(s) detected");
-            const filteredParticipants = detectedParticipants.filter(
-              (participant) =>
-                !currentParticipants.find((p) => p.name === participant.p.name),
-            );
-            console.log("New Participants:", filteredParticipants);
-            filteredParticipants.forEach((participant) => {
-              console.log("Adding new participant:", participant.p);
-              window.addParticipant(participant.p);
-              if (participant.p.name !== botName) {
-                window.observeSpeech(participant.vb, participant.p);
-              }
-              window.participantArray.push(participant.p);
-            });
-          } else if (detectedParticipants.length < currentParticipants.length) {
-            console.log("Participant(s) left detected");
-            const filteredParticipants = currentParticipants.filter(
-              (participant) =>
-                !detectedParticipants.find(
-                  (p) => p.p.name === participant.name,
-                ),
-            );
-            console.log("Participants that left:", filteredParticipants);
-            filteredParticipants.forEach((participant) => {
-              console.log("Removing participant:", participant);
-              const tracked = window.participantArray.find(
-                (p: Participant) => p.name === participant.name,
-              );
-              tracked?.observer?.disconnect();
-              window.onParticipantLeave(participant);
+
+          const currentIds = new Set(
+            currentParticipants.map((p) => p.id),
+          );
+          const detectedIds = new Set(detectedMap.keys());
+
+          for (const id of detectedIds) {
+            if (!currentIds.has(id)) {
+              const entry = detectedMap.get(id)!;
+              console.log("Adding new participant:", entry.p);
+              window.addParticipant(entry.p);
+              window.participantArray.push(entry.p);
+            }
+          }
+
+          for (const p of currentParticipants) {
+            if (!detectedIds.has(p.id)) {
+              console.log("Removing participant:", p);
+              window.onParticipantLeave(p);
               window.participantArray = window.participantArray.filter(
-                (p: Participant) => p.name !== participant.name,
+                (x: Participant) => x.id !== p.id,
               );
-            });
+            }
+          }
+
+          for (const [element, observer] of vidBlockObservers) {
+            if (!element.isConnected) {
+              observer.disconnect();
+              vidBlockObservers.delete(element);
+            }
           }
         };
 
@@ -641,6 +652,7 @@ export class MeetsBot extends Bot {
         window.mergedAudioParticipantArray = [];
 
         window.observeSpeech = (node, participant) => {
+          if (!participant) return;
           console.log("Observing speech for participant:", participant.name);
           const activityObserver = new MutationObserver((mutations) => {
             mutations.forEach(() => {
