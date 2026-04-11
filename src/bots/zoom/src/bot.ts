@@ -446,7 +446,14 @@ export class ZoomBot extends Bot {
     };
 
     while (true) {
-      await routineChecks();
+      try {
+        await routineChecks();
+      } catch (e) {
+        console.log("Routine check failed, ending:", e);
+        this.stopRecording();
+        await this.endLife();
+        break;
+      }
     }
   }
 
