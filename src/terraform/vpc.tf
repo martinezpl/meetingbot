@@ -124,13 +124,6 @@ resource "aws_route_table" "database" {
   }
 }
 
-// Database Internet Route
-resource "aws_route" "database_internet_gateway" {
-  route_table_id         = aws_route_table.database.id
-  destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = aws_internet_gateway.this.id
-}
-
 // Database Route Table Associations
 resource "aws_route_table_association" "database" {
   count          = length(aws_subnet.database)

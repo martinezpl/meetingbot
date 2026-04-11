@@ -13,12 +13,12 @@ resource "aws_security_group" "db" {
 
 // Security group rule for PostgreSQL access
 resource "aws_security_group_rule" "postgresql_ingress" {
-  type              = "ingress"
-  from_port         = 5432
-  to_port           = 5432
-  protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"] # This allows public access to the database
-  security_group_id = aws_security_group.db.id
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.ecs_tasks.id
+  security_group_id        = aws_security_group.db.id
 }
 
 resource "aws_security_group_rule" "postgresql_egress" {
@@ -38,7 +38,7 @@ resource "aws_db_instance" "this" {
   instance_class        = "db.t4g.micro"
   allocated_storage     = 10
   max_allocated_storage = 100
-  publicly_accessible = true
+  publicly_accessible = false
 
   db_name  = "postgres"
   username = "postgres"
