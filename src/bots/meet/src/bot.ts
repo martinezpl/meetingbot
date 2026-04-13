@@ -380,13 +380,31 @@ export class MeetsBot extends Bot {
     }
 
     console.log("Stopping ffmpeg recording...");
-    // Send SIGINT to allow ffmpeg to finalize the file
-    this.ffmpegProcess.kill("SIGINT");
+    const proc = this.ffmpegProcess;
 
-    // Wait for process to exit
-    await new Promise((resolve) => {
-      this.ffmpegProcess?.on("exit", resolve);
-    });
+    // Send SIGINT to allow ffmpeg to finalize the file
+    proc.kill("SIGINT");
+
+    // Wait for graceful exit, escalate to SIGKILL if ffmpeg doesn't respond
+    const exited = await Promise.race([
+      new Promise<boolean>((resolve) => {
+        proc.on("exit", () => resolve(true));
+      }),
+      setTimeout(15000).then(() => false),
+    ]);
+
+    if (!exited) {
+      console.warn(
+        "ffmpeg did not exit after SIGINT (15s), sending SIGKILL...",
+      );
+      proc.kill("SIGKILL");
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          proc.on("exit", () => resolve());
+        }),
+        setTimeout(5000),
+      ]);
+    }
 
     this.ffmpegProcess = null;
     console.log(`Recording saved to: ${this.getRecordingPath()}`);
