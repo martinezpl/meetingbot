@@ -347,14 +347,9 @@ export class MeetsBot extends Bot {
     this.ffmpegProcess = spawn("ffmpeg", ffmpegArgs);
     console.log("ffmpeg recording started.");
     this.recordingStartedAt = Date.now();
-    // This may be too noisy
-    // this.ffmpegProcess.stdout.on("data", (data) => {
-    //   console.log(`ffmpeg: ${data}`);
-    // });
-
-    // this.ffmpegProcess.stderr.on("data", (data) => {
-    //   console.error(`ffmpeg err: ${data}`);
-    // });
+    // Drain stdout/stderr to prevent pipe buffer from filling up and blocking ffmpeg
+    this.ffmpegProcess.stdout.resume();
+    this.ffmpegProcess.stderr.resume();
 
     this.ffmpegProcess.on("exit", (code) => {
       console.log(`ffmpeg process exited with code ${code}`);

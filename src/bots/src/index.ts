@@ -208,6 +208,9 @@ const main = async () => {
         "-y",
         recordingPath.replace(/\.[^/.]+$/, ".mp4"),
       ]);
+      // Drain stdout/stderr to prevent pipe buffer from filling up and blocking ffmpeg
+      ffmpegProcess.stdout.resume();
+      ffmpegProcess.stderr.resume();
       // wait for ffmpeg to finish
       await new Promise((resolve, reject) => {
         ffmpegProcess.on("close", (code) => {
@@ -220,12 +223,6 @@ const main = async () => {
           }
         }),
           ffmpegProcess.on("exit", resolve);
-        // ffmpegProcess.stdout.on("data", (data) => {
-        //   console.log(`ffmpeg: ${data}`);
-        // });
-        // ffmpegProcess.stderr.on("data", (data) => {
-        //   console.error(`ffmpeg err: ${data}`);
-        // });
       });
       recordingPath = recordingPath.replace(/\.[^/.]+$/, ".mp4");
       contentType = "video/mp4";
